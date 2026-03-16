@@ -9,6 +9,9 @@ __pycache__/
 # PDFs locales (opcional, depende de si quieres commitearlos)
 backend/data/pdfs/
 
+# Variables de entorno (claves secretas)
+.env
+
 # Archivos del sistema/editor
 .DS_Store
 .vscode/

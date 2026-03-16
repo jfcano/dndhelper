@@ -14,4 +14,3 @@ pypdf
 tqdm
 
 sentence-transformers
-

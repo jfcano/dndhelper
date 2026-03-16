@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 
+from dotenv import load_dotenv
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -14,10 +16,12 @@ class Settings:
     openai_model: str
     chunk_size: int
     chunk_overlap: int
+    embeddings_device: str  # "cuda" o "cpu"
 
 
 def get_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[2]
+    load_dotenv(project_root / ".env")
     chroma_persist_dir = project_root / "backend" / "storage" / "chroma_rules"
 
     return Settings(
@@ -28,5 +32,6 @@ def get_settings() -> Settings:
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         chunk_size=int(os.getenv("RAG_CHUNK_SIZE", "1200")),
         chunk_overlap=int(os.getenv("RAG_CHUNK_OVERLAP", "200")),
+        embeddings_device=os.getenv("EMBEDDINGS_DEVICE", "cuda"),
     )
 

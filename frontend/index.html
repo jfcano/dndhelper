@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DnD Helper — Consultar reglas y lore</title>
+  <style>
+    :root {
+      --bg: #1a1b26;
+      --surface: #24283b;
+      --text: #c0caf5;
+      --muted: #565f89;
+      --accent: #7aa2f7;
+      --success: #9ece6a;
+      --error: #f7768e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      min-height: 100vh;
+      padding: 1.5rem;
+      line-height: 1.5;
+    }
+    .container { max-width: 42rem; margin: 0 auto; }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin: 0 0 0.5rem;
+      color: var(--text);
+    }
+    .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+    label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      color: var(--muted);
+    }
+    textarea {
+      width: 100%;
+      min-height: 100px;
+      padding: 0.75rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--muted);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 1rem;
+      resize: vertical;
+    }
+    textarea::placeholder { color: var(--muted); }
+    textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    button {
+      margin-top: 0.75rem;
+      padding: 0.6rem 1.25rem;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.1); }
+    button:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+    .response-box {
+      margin-top: 1.5rem;
+      padding: 1rem 1.25rem;
+      background: var(--surface);
+      border-radius: 8px;
+      border: 1px solid var(--muted);
+      white-space: pre-wrap;
+    }
+    .response-box.empty { display: none; }
+    .response-box.loading { color: var(--muted); }
+    .response-box.error { border-color: var(--error); color: var(--error); }
+    .sources {
+      margin-top: 0.75rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .sources a { color: var(--accent); }
+    .loading-dots::after {
+      content: '';
+      animation: dots 1s steps(4, end) infinite;
+    }
+    @keyframes dots {
+      0%, 20% { content: '.'; }
+      40% { content: '..'; }
+      60%, 100% { content: '...'; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>DnD Helper</h1>
+    <p class="subtitle">Pregunta sobre reglas o lore del manual indexado.</p>
+
+    <form id="form" action="#" method="post">
+      <label for="question">Tu pregunta</label>
+      <textarea id="question" name="question" placeholder="Ej: ¿Qué es una tirada de salvación?" required></textarea>
+      <button type="submit" id="btn">Preguntar</button>
+    </form>
+
+    <div id="response" class="response-box empty" aria-live="polite"></div>
+  </div>
+
+  <script>
+    const form = document.getElementById('form');
+    const questionEl = document.getElementById('question');
+    const btn = document.getElementById('btn');
+    const responseEl = document.getElementById('response');
+
+    function setResponse(content, isError = false, isLoading = false) {
+      responseEl.classList.remove('empty', 'loading', 'error');
+      if (isLoading) {
+        responseEl.classList.add('loading', 'loading-dots');
+        responseEl.textContent = 'Buscando en el manual';
+      } else {
+        if (isError) responseEl.classList.add('error');
+        responseEl.innerHTML = content;
+      }
+      responseEl.classList.remove('empty');
+    }
+
+    function showAnswer(data) {
+      const answerEscaped = escapeHtml(data.answer || '').replace(/\n/g, '<br>');
+      let html = '<div class="answer">' + answerEscaped + '</div>';
+      if (data.sources && data.sources.length > 0) {
+        html += '<div class="sources">Fuentes: ';
+        html += data.sources.map(s => {
+          const src = (s.source || '?') + (s.page != null ? ' p.' + s.page : '');
+          return '<span>' + escapeHtml(src) + '</span>';
+        }).join(' · ');
+        html += '</div>';
+      }
+      setResponse(html, false, false);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const question = (questionEl.value || '').trim();
+      if (!question) return;
+
+      btn.disabled = true;
+      setResponse('', false, true);
+
+      try {
+        const res = await fetch('/api/query_rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          const msg = data.detail || (typeof data.detail === 'string' ? data.detail : 'Error en la API');
+          setResponse('Error: ' + (Array.isArray(msg) ? msg.map(m => m.msg || m).join(' ') : msg), true, false);
+          return;
+        }
+        showAnswer(data);
+      } catch (err) {
+        const msg = err && err.message ? err.message : 'Error de red';
+        const hint = window.location.protocol === 'file:' 
+          ? '\n\nAbre la página desde la API: http://127.0.0.1:8000/ (no abras el archivo HTML directamente).'
+          : '\n\nComprueba que uvicorn está en marcha: uvicorn backend.app.main:app --reload';
+        setResponse('No se pudo conectar con el servidor.\n' + msg + hint, true, false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
