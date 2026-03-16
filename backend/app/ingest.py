@@ -4,12 +4,17 @@ from dataclasses import dataclass
 from pathlib import Path
 import hashlib
 import json
+from typing import Callable
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from tqdm import tqdm
 
 from backend.app.config import get_settings
 from backend.app.vector_store import get_vector_store
+
+# Tamaño de lote para indexar con barra de progreso (embeddings en CPU son lentos)
+_INGEST_BATCH_SIZE = 32
 
 
 @dataclass(frozen=True)
@@ -45,7 +50,18 @@ def _save_manifest(persist_dir: Path, manifest: dict) -> None:
     p.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def ingest_pdf(pdf_path: str, *, force: bool = False) -> IngestResult:
+def ingest_pdf(
+    pdf_path: str,
+    *,
+    force: bool = False,
+    show_progress: bool = True,
+    progress_callback: Callable[[str, int, int], None] | None = None,
+) -> IngestResult:
+    """
+    Indexa un PDF en Chroma (persistido).
+    show_progress: si True, usa tqdm en consola para la fase de indexación.
+    progress_callback(phase, current, total): opcional; phase in ("load", "split", "index").
+    """
     settings = get_settings()
     persist_dir = settings.chroma_persist_dir
     persist_dir.mkdir(parents=True, exist_ok=True)
@@ -67,14 +83,30 @@ def ingest_pdf(pdf_path: str, *, force: bool = False) -> IngestResult:
             persist_dir=str(persist_dir),
         )
 
+    def _report(phase: str, current: int, total: int) -> None:
+        if progress_callback:
+            progress_callback(phase, current, total)
+
+    # Fase 1: cargar PDF
+    if show_progress:
+        tqdm.write(f"Cargando PDF: {pdf.name}")
     loader = PyPDFLoader(str(pdf))
     docs = loader.load()
+    _report("load", len(docs), len(docs))
+    if show_progress:
+        tqdm.write(f"  Páginas cargadas: {len(docs)}")
 
+    # Fase 2: dividir en chunks
+    if show_progress:
+        tqdm.write("Dividiendo en chunks...")
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=settings.chunk_size,
         chunk_overlap=settings.chunk_overlap,
     )
     chunks = splitter.split_documents(docs)
+    _report("split", len(chunks), len(chunks))
+    if show_progress:
+        tqdm.write(f"  Chunks generados: {len(chunks)}")
 
     # Metadatos mínimos útiles para citar origen
     for d in chunks:
@@ -87,12 +119,24 @@ def ingest_pdf(pdf_path: str, *, force: bool = False) -> IngestResult:
         try:
             vs.delete_collection()
         except Exception:
-            # MVP: si no existe aún, seguimos
             pass
         vs = get_vector_store()
 
-    vs.add_documents(chunks)
-    # Algunas versiones persisten automáticamente; mantener llamada segura
+    # Fase 3: indexar en lotes con barra de progreso (lo más lento en CPU)
+    if show_progress:
+        tqdm.write("Indexando embeddings (puede tardar varios minutos en CPU)...")
+    batch_size = _INGEST_BATCH_SIZE
+    for start in tqdm(
+        range(0, len(chunks), batch_size),
+        desc="Indexando chunks",
+        total=(len(chunks) + batch_size - 1) // batch_size,
+        unit="lote",
+        disable=not show_progress,
+    ):
+        batch = chunks[start : start + batch_size]
+        vs.add_documents(batch)
+        _report("index", min(start + len(batch), len(chunks)), len(chunks))
+
     persist = getattr(vs, "persist", None)
     if callable(persist):
         persist()
