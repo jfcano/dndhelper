@@ -9,6 +9,9 @@ backend/storage/
 # PDFs locales (opcional, depende de si quieres commitearlos)
 backend/data/
 
+# Datos extra locales (no versionar)
+extradata/
+
 # Variables de entorno (claves secretas)
 .env
 
