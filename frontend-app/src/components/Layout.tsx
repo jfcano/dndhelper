@@ -1,0 +1,24 @@
+import { NavLink, Outlet } from 'react-router-dom'
+import './layout.css'
+
+export function Layout() {
+  return (
+    <div className="appShell">
+      <header className="topbar">
+        <div className="brand">dndhelper</div>
+        <nav className="nav">
+          <NavLink to="/campaigns" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Campaigns
+          </NavLink>
+          <NavLink to="/worlds" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Worlds
+          </NavLink>
+        </nav>
+      </header>
+      <main className="content">
+        <Outlet />
+      </main>
+    </div>
+  )
+}
+

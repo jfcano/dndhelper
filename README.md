@@ -135,6 +135,28 @@ La página está en **`frontend/index.html`**; la API la sirve en la ruta raíz.
 
 UI admin mínima: abre **http://127.0.0.1:8000/admin**.
 
+### Frontend avanzado (React, en progreso)
+
+Además del `frontend/` simple, existe un frontend React pensado para ir ampliándolo con la revisión/edición de campañas y mundos generados.
+
+Arranque (desarrollo):
+
+1. Inicia el backend:
+
+```bash
+.venv\\Scripts\\uvicorn backend.app.main:app --reload
+```
+
+2. En otra terminal:
+
+```bash
+cd frontend-app
+npm install
+npm run dev
+```
+
+El frontend usa un **proxy** de Vite para `/api` apuntando a `http://127.0.0.1:8000`.
+
 ### Campañas (Fase 3)
 
 Endpoints:
