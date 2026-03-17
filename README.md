@@ -144,6 +144,38 @@ Endpoints:
 - `PATCH /api/campaigns/{id}`
 - `DELETE /api/campaigns/{id}`
 
+### Generación de contenido (Fase 4, borradores editables)
+
+Flujo recomendado (con aprobación entre fases):
+
+1. **Brief** (preferencias del usuario)
+   - `POST /api/campaigns/{campaign_id}/brief`
+   - `POST /api/campaigns/{campaign_id}/brief/approve`
+
+2. **Mundo**
+   - `POST /api/campaigns/{campaign_id}/world:generate` (crea un `world` en *draft* y lo vincula a la campaña)
+   - `PATCH /api/worlds/{world_id}` (editar borrador)
+   - `POST /api/worlds/{world_id}/approve`
+
+3. **Guión general (outline)**
+   - `POST /api/campaigns/{campaign_id}/outline:generate`
+   - `PATCH /api/campaigns/{campaign_id}/outline` (editar borrador)
+   - `POST /api/campaigns/{campaign_id}/outline/approve`
+
+4. **Arcos**
+   - `POST /api/campaigns/{campaign_id}/arcs:generate?arc_count=3`
+   - `PATCH /api/arcs/{arc_id}` (editar)
+   - `POST /api/arcs/{arc_id}/approve`
+
+5. **Sesiones**
+   - `POST /api/arcs/{arc_id}/sessions:generate?session_count=3`
+   - `PATCH /api/sessions/{session_id}` (editar; incluye `content_draft`)
+   - `POST /api/sessions/{session_id}/approve`
+
+Notas:
+- El backend usa `LOCAL_OWNER_UUID` (MVP sin login) para aislar datos por propietario.
+- Para usar generación real necesitas `OPENAI_API_KEY` (se usa `OPENAI_MODEL`).
+
 ### Arcos y sesiones (Fase 3 ampliada)
 
 Endpoints (Arcs):

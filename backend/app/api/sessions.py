@@ -53,3 +53,17 @@ def delete_session(session_id: UUID, db: Session = Depends(get_db)) -> dict:
     crud.delete_session(db, obj)
     return {"ok": True}
 
+
+@router.post("/sessions/{session_id}/approve", response_model=SessionOut)
+def approve_session(session_id: UUID, db: Session = Depends(get_db)) -> SessionOut:
+    owner_id = get_owner_id()
+    obj = crud.get_session(db, owner_id, session_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Session no encontrada.")
+    obj.content_final = obj.content_draft
+    obj.approval_status = "approved"
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+

@@ -17,6 +17,7 @@ def test_alembic_upgrade_creates_core_tables(postgres_test_url):
             conn.execute(text("DROP TABLE IF EXISTS sessions CASCADE"))
             conn.execute(text("DROP TABLE IF EXISTS arcs CASCADE"))
             conn.execute(text("DROP TABLE IF EXISTS campaigns CASCADE"))
+            conn.execute(text("DROP TABLE IF EXISTS worlds CASCADE"))
             conn.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE"))
 
         cfg = Config("alembic.ini")
