@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 class Settings:
     project_root: Path
     chroma_persist_dir: Path
+    data_dir: Path  # carpeta por defecto para PDFs (p. ej. backend/data)
     default_collection: str
     openai_api_key: str | None
     openai_model: str
@@ -23,10 +24,12 @@ def get_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[2]
     load_dotenv(project_root / ".env")
     chroma_persist_dir = project_root / "backend" / "storage" / "chroma_rules"
+    data_dir = project_root / "backend" / "data"
 
     return Settings(
         project_root=project_root,
         chroma_persist_dir=chroma_persist_dir,
+        data_dir=data_dir,
         default_collection=os.getenv("RAG_COLLECTION", "rules_5e"),
         openai_api_key=os.getenv("OPENAI_API_KEY"),
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),

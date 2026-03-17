@@ -8,6 +8,8 @@ Prototipo (Fase 1–2): backend en Python con **FastAPI + LangChain**, RAG sobre
 - Variable de entorno **`OPENAI_API_KEY`** para el modelo de chat (respuesta final)
 - Para GPU: PyTorch con soporte CUDA y drivers NVIDIA
 
+**Opcional:** para evitar el aviso de “unauthenticated requests” y tener mejores límites de descarga al usar modelos de Hugging Face (p. ej. bge-m3), define **`HF_TOKEN`** en tu `.env` con un [token de acceso](https://huggingface.co/settings/tokens) de Hugging Face.
+
 ### Instalación
 
 ```bash
@@ -25,15 +27,34 @@ pip install torch
 pip install -r requirements.txt
 ```
 
-### Añadir el PDF
+### Añadir PDFs
 
-Copia tu PDF a `backend/data/pdfs/` (por ejemplo `backend/data/pdfs/manual.pdf`).
+Coloca tus PDFs en `backend/data/` (o en subcarpetas dentro; se buscan en profundidad). Ejemplo: `backend/data/manual.pdf`, `backend/data/libros/campana.pdf`.
 
 ### Ingesta (crear embeddings y persistirlos)
 
+**Por defecto** (recomendado): indexa **todos** los PDFs encontrados en `backend/data` de forma recursiva:
+
 ```bash
-python -m backend.scripts.ingest_pdf --pdf backend/data/pdfs/manual.pdf
+python -m backend.scripts.ingest_pdf
 ```
+
+**Un solo PDF:**
+
+```bash
+python -m backend.scripts.ingest_pdf --pdf backend/data/manual.pdf
+```
+
+**Varios PDFs desde otra carpeta** (script alternativo):
+
+```bash
+python -m backend.scripts.ingest_pdfs --pdf backend/data/manual.pdf --pdf backend/data/campana.pdf
+python -m backend.scripts.ingest_pdfs --dir backend/data
+```
+
+- Los nuevos PDFs **se añaden** al índice sin borrar los que ya estaban.
+- Si vuelves a ingestar el **mismo** PDF (misma ruta), no se duplican chunks: se reutiliza el índice salvo que cambie el archivo o uses `--force`.
+- `--force`: recrea el índice de ese PDF; usado en un solo archivo borra toda la colección y deja solo ese. Con varios PDFs, la colección queda formada solo por los que pases en esa ejecución.
 
 Esto crea/actualiza un índice Chroma persistido en `backend/storage/chroma_rules/`.
 

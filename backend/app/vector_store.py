@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 
 from backend.app.config import get_settings
 from backend.app.embeddings import get_embeddings

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 from backend.app.config import get_settings
 

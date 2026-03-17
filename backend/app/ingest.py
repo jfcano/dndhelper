@@ -26,6 +26,11 @@ class IngestResult:
     persist_dir: str
 
 
+def _sanitize_utf8(s: str) -> str:
+    """Elimina surrogates y otros caracteres no encodables en UTF-8 (p. ej. de PDFs mal decodificados)."""
+    return s.encode("utf-8", errors="replace").decode("utf-8")
+
+
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -104,6 +109,19 @@ def ingest_pdf(
         chunk_overlap=settings.chunk_overlap,
     )
     chunks = splitter.split_documents(docs)
+    # Excluir chunks vacíos y normalizar page_content (UTF-8 válido, sin surrogates)
+    valid = []
+    for d in chunks:
+        raw = getattr(d, "page_content", None)
+        if raw is None:
+            continue
+        text = str(raw).strip()
+        if not text:
+            continue
+        text = _sanitize_utf8(text)
+        d.page_content = text
+        valid.append(d)
+    chunks = valid
     _report("split", len(chunks), len(chunks))
     if show_progress:
         tqdm.write(f"  Chunks generados: {len(chunks)}")
@@ -137,9 +155,7 @@ def ingest_pdf(
         vs.add_documents(batch)
         _report("index", min(start + len(batch), len(chunks)), len(chunks))
 
-    persist = getattr(vs, "persist", None)
-    if callable(persist):
-        persist()
+    # Chroma 0.4+ persiste automáticamente; no hace falta llamar a persist()
 
     manifest[key] = {
         "pdf_sha256": pdf_sha,
