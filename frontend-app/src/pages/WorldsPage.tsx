@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { World } from '../lib/api'
+import { formatError } from '../lib/errors'
 
 export function WorldsPage() {
   const [items, setItems] = useState<World[] | null>(null)
@@ -13,7 +14,7 @@ export function WorldsPage() {
     try {
       setItems(await api.listWorlds())
     } catch (e) {
-      setError(String(e))
+      setError(formatError(e))
     }
   }
 
@@ -30,7 +31,7 @@ export function WorldsPage() {
       await api.createWorld({ name: 'Nuevo mundo' })
       await reload()
     } catch (e) {
-      setError(String(e))
+      setError(formatError(e))
     } finally {
       setCreating(false)
     }

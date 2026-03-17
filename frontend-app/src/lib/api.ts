@@ -45,7 +45,7 @@ export type CampaignUpdate = {
   world_id?: UUID | null
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   status: number
   body: unknown
 
@@ -57,10 +57,19 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-    ...init,
-  })
+  let res: Response
+  try {
+    res = await fetch(path, {
+      headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+      ...init,
+    })
+  } catch (e) {
+    throw new ApiError(
+      'No se pudo conectar con el backend (¿está levantado?).',
+      0,
+      e instanceof Error ? e.message : e,
+    )
+  }
   if (!res.ok) {
     let body: unknown = null
     try {

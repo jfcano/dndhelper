@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { Campaign } from '../lib/api'
+import { formatError } from '../lib/errors'
 
 export function CampaignsPage() {
   const [items, setItems] = useState<Campaign[] | null>(null)
@@ -17,7 +18,7 @@ export function CampaignsPage() {
       })
       .catch((e) => {
         if (!alive) return
-        setError(String(e))
+        setError(formatError(e))
       })
     return () => {
       alive = false

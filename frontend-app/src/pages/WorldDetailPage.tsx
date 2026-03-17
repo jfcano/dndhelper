@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { World } from '../lib/api'
+import { formatError } from '../lib/errors'
 
 export function WorldDetailPage() {
   const { id } = useParams()
@@ -25,7 +26,7 @@ export function WorldDetailPage() {
       })
       .catch((e) => {
         if (!alive) return
-        setError(String(e))
+        setError(formatError(e))
       })
     return () => {
       alive = false
@@ -42,7 +43,7 @@ export function WorldDetailPage() {
       setWorld(updated)
       setOk('Guardado')
     } catch (e) {
-      setError(String(e))
+      setError(formatError(e))
     } finally {
       setSaving(false)
     }
@@ -58,7 +59,7 @@ export function WorldDetailPage() {
       setWorld(updated)
       setOk('Aprobado')
     } catch (e) {
-      setError(String(e))
+      setError(formatError(e))
     } finally {
       setApproving(false)
     }

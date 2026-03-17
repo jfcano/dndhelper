@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { Campaign, World } from '../lib/api'
+import { formatError } from '../lib/errors'
 
 export function CampaignDetailPage() {
   const { id } = useParams()
@@ -24,7 +25,7 @@ export function CampaignDetailPage() {
       })
       .catch((e) => {
         if (!alive) return
-        setError(String(e))
+        setError(formatError(e))
       })
     return () => {
       alive = false
@@ -41,7 +42,7 @@ export function CampaignDetailPage() {
       const updated = await api.patchCampaign(id, { world_id: worldId === '' ? null : worldId })
       setCampaign(updated)
     } catch (e) {
-      setError(String(e))
+      setError(formatError(e))
     } finally {
       setSaving(false)
     }
