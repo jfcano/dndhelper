@@ -1,5 +1,5 @@
 """
-Ingesta uno o más PDFs en la misma colección Chroma.
+Ingesta uno o más PDFs en la misma colección de Postgres (pgvector).
 Cada PDF se añade al índice sin borrar los ya indexados (a menos que uses --force en uno ya ingerido).
 """
 from __future__ import annotations
@@ -12,7 +12,7 @@ from backend.app.ingest import ingest_pdf
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Ingesta uno o más PDFs en Chroma (persistente). Los nuevos se añaden al índice existente."
+        description="Ingesta uno o más PDFs en Postgres (pgvector). Los nuevos se añaden al índice existente."
     )
     parser.add_argument(
         "--pdf",

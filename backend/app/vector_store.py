@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
-from langchain_chroma import Chroma
+from langchain_postgres import PGVector
 
 from backend.app.config import get_settings
 from backend.app.embeddings import get_embeddings
@@ -11,24 +10,22 @@ from backend.app.embeddings import get_embeddings
 logger = logging.getLogger(__name__)
 
 
-def get_chroma_persist_dir() -> Path:
+def get_vector_store() -> PGVector:
     settings = get_settings()
-    settings.chroma_persist_dir.mkdir(parents=True, exist_ok=True)
-    return settings.chroma_persist_dir
-
-
-def get_vector_store() -> Chroma:
-    settings = get_settings()
-    persist_dir = get_chroma_persist_dir()
     embeddings = get_embeddings()
-    logger.info(
-        "vector_store: Chroma collection=%s persist_directory=%s",
-        settings.default_collection,
-        persist_dir,
-    )
-    return Chroma(
+    if not settings.postgres_url:
+        raise RuntimeError("Falta POSTGRES_URL en el entorno.")
+
+    logger.info("vector_store: PGVector collection=%s", settings.default_collection)
+    return PGVector(
+        embeddings=embeddings,
         collection_name=settings.default_collection,
-        embedding_function=embeddings,
-        persist_directory=str(persist_dir),
+        connection=settings.postgres_url,
+        use_jsonb=True,
+        create_extension=settings.postgres_create_extension,
+        engine_args={
+            "connect_args": {"connect_timeout": settings.postgres_connect_timeout_s},
+            "pool_pre_ping": True,
+        },
     )
 

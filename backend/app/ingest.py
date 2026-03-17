@@ -23,12 +23,17 @@ class IngestResult:
     pdf_sha256: str
     chunks_indexed: int
     collection: str
-    persist_dir: str
+    manifest_path: str
 
 
 def _sanitize_utf8(s: str) -> str:
-    """Elimina surrogates y otros caracteres no encodables en UTF-8 (p. ej. de PDFs mal decodificados)."""
-    return s.encode("utf-8", errors="replace").decode("utf-8")
+    """Normaliza texto para almacenamiento/embeddings.
+
+    - Reemplaza surrogates y otros caracteres no encodables en UTF-8.
+    - Elimina bytes NUL ('\\x00'), que Postgres no permite en campos TEXT.
+    """
+    s = s.encode("utf-8", errors="replace").decode("utf-8")
+    return s.replace("\x00", "")
 
 
 def _sha256_file(path: Path) -> str:
@@ -39,19 +44,22 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def _manifest_path(persist_dir: Path) -> Path:
-    return persist_dir / "ingest_manifest.json"
+def _manifest_path(project_root: Path) -> Path:
+    # Archivo local para evitar re-ingestas innecesarias. No está relacionado con el vector store.
+    storage_dir = project_root / "backend" / "storage"
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    return storage_dir / "ingest_manifest.json"
 
 
-def _load_manifest(persist_dir: Path) -> dict:
-    p = _manifest_path(persist_dir)
+def _load_manifest(project_root: Path) -> dict:
+    p = _manifest_path(project_root)
     if not p.exists():
         return {}
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def _save_manifest(persist_dir: Path, manifest: dict) -> None:
-    p = _manifest_path(persist_dir)
+def _save_manifest(project_root: Path, manifest: dict) -> None:
+    p = _manifest_path(project_root)
     p.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -63,29 +71,28 @@ def ingest_pdf(
     progress_callback: Callable[[str, int, int], None] | None = None,
 ) -> IngestResult:
     """
-    Indexa un PDF en Chroma (persistido).
+    Indexa un PDF en Postgres (pgvector) usando LangChain.
     show_progress: si True, usa tqdm en consola para la fase de indexación.
     progress_callback(phase, current, total): opcional; phase in ("load", "split", "index").
     """
     settings = get_settings()
-    persist_dir = settings.chroma_persist_dir
-    persist_dir.mkdir(parents=True, exist_ok=True)
 
     pdf = Path(pdf_path)
     if not pdf.exists():
         raise FileNotFoundError(f"No existe el PDF: {pdf}")
 
     pdf_sha = _sha256_file(pdf)
-    manifest = _load_manifest(persist_dir)
+    manifest = _load_manifest(settings.project_root)
     key = f"{settings.default_collection}:{str(pdf.resolve())}"
 
     if not force and manifest.get(key, {}).get("pdf_sha256") == pdf_sha:
+        mp = _manifest_path(settings.project_root)
         return IngestResult(
             pdf_path=str(pdf),
             pdf_sha256=pdf_sha,
             chunks_indexed=0,
             collection=settings.default_collection,
-            persist_dir=str(persist_dir),
+            manifest_path=str(mp),
         )
 
     def _report(phase: str, current: int, total: int) -> None:
@@ -155,21 +162,20 @@ def ingest_pdf(
         vs.add_documents(batch)
         _report("index", min(start + len(batch), len(chunks)), len(chunks))
 
-    # Chroma 0.4+ persiste automáticamente; no hace falta llamar a persist()
-
     manifest[key] = {
         "pdf_sha256": pdf_sha,
         "pdf_path": str(pdf.resolve()),
         "collection": settings.default_collection,
         "chunks": len(chunks),
     }
-    _save_manifest(persist_dir, manifest)
+    _save_manifest(settings.project_root, manifest)
+    mp = _manifest_path(settings.project_root)
 
     return IngestResult(
         pdf_path=str(pdf),
         pdf_sha256=pdf_sha,
         chunks_indexed=len(chunks),
         collection=settings.default_collection,
-        persist_dir=str(persist_dir),
+        manifest_path=str(mp),
     )
 

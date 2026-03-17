@@ -10,8 +10,10 @@ from dotenv import load_dotenv
 @dataclass(frozen=True)
 class Settings:
     project_root: Path
-    chroma_persist_dir: Path
     data_dir: Path  # carpeta por defecto para PDFs (p. ej. backend/data)
+    postgres_url: str | None  # postgresql+psycopg://user:pass@host:port/db
+    postgres_connect_timeout_s: int
+    postgres_create_extension: bool
     default_collection: str
     openai_api_key: str | None
     openai_model: str
@@ -23,13 +25,14 @@ class Settings:
 def get_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[2]
     load_dotenv(project_root / ".env")
-    chroma_persist_dir = project_root / "backend" / "storage" / "chroma_rules"
     data_dir = project_root / "backend" / "data"
 
     return Settings(
         project_root=project_root,
-        chroma_persist_dir=chroma_persist_dir,
         data_dir=data_dir,
+        postgres_url=os.getenv("POSTGRES_URL"),
+        postgres_connect_timeout_s=int(os.getenv("POSTGRES_CONNECT_TIMEOUT_S", "10")),
+        postgres_create_extension=os.getenv("POSTGRES_CREATE_EXTENSION", "true").strip().lower() in ("1", "true", "yes", "y", "on"),
         default_collection=os.getenv("RAG_COLLECTION", "rules_5e"),
         openai_api_key=os.getenv("OPENAI_API_KEY"),
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),

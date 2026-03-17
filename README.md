@@ -1,6 +1,12 @@
 ## dndhelper
 
-Prototipo (Fase 1–2): backend en Python con **FastAPI + LangChain**, RAG sobre un PDF de D&D usando **Chroma persistido** y embeddings **`BAAI/bge-m3`**. Incluye una **página web** para consultar reglas y lore. Por defecto usa **CUDA** si está disponible (configurable con `EMBEDDINGS_DEVICE=cpu`). El código es **multiplataforma** (Windows y Linux).
+Prototipo (Fase 1–3): backend en Python con **FastAPI + LangChain**.
+
+- RAG sobre PDFs de D&D usando **Postgres + pgvector** para almacenar embeddings.
+- Persistencia de **campañas** en Postgres con **SQLAlchemy + Alembic**.
+- Incluye una UI admin mínima en `/admin` y una página pública simple.
+
+Por defecto usa **CUDA** si está disponible (configurable con `EMBEDDINGS_DEVICE=cpu`). El código es **multiplataforma** (Windows y Linux).
 
 ### Requisitos
 
@@ -33,6 +39,39 @@ Coloca tus PDFs en `backend/data/` (o en subcarpetas dentro; se buscan en profun
 
 ### Ingesta (crear embeddings y persistirlos)
 
+### Almacenamiento de embeddings (Postgres/pgvector)
+
+El proyecto usa **Postgres** con **pgvector** para persistir embeddings (y más adelante campañas).
+
+1. Asegúrate de tener un Postgres accesible y que la extensión `vector` esté instalada en la BD:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+2. En `.env` configura:
+
+```env
+POSTGRES_URL=postgresql+psycopg://usuario:password@localhost:5432/mi_bd
+```
+
+- `RAG_COLLECTION` sigue siendo el nombre lógico de la colección (se usa como `collection_name`).
+
+### Migraciones (campañas)
+
+La tabla `campaigns` se gestiona con **Alembic**.
+
+```bash
+# Crear/actualizar tablas
+alembic upgrade head
+```
+
+Si cambias modelos, generas una migración nueva con:
+
+```bash
+alembic revision --autogenerate -m "tu_cambio"
+```
+
 **Por defecto** (recomendado): indexa **todos** los PDFs encontrados en `backend/data` de forma recursiva:
 
 ```bash
@@ -56,17 +95,44 @@ python -m backend.scripts.ingest_pdfs --dir backend/data
 - Si vuelves a ingestar el **mismo** PDF (misma ruta), no se duplican chunks: se reutiliza el índice salvo que cambie el archivo o uses `--force`.
 - `--force`: recrea el índice de ese PDF; usado en un solo archivo borra toda la colección y deja solo ese. Con varios PDFs, la colección queda formada solo por los que pases en esa ejecución.
 
-Esto crea/actualiza un índice Chroma persistido en `backend/storage/chroma_rules/`.
-
 ### Ejecutar la API
 
 ```bash
-uvicorn backend.app.main:app --reload
+.venv\Scripts\uvicorn backend.app.main:app --reload
+```
+
+### Tests automáticos
+
+Los tests usan un Postgres **aislado** (no el de dev). Define `POSTGRES_TEST_URL` y ejecuta:
+
+- Windows (PowerShell):
+
+```powershell
+$env:POSTGRES_TEST_URL="postgresql+psycopg://user:pass@host:5432/db_test"
+./scripts/test.ps1 -Quiet
+```
+
+- Linux/macOS:
+
+```bash
+export POSTGRES_TEST_URL="postgresql+psycopg://user:pass@host:5432/db_test"
+./scripts/test.sh
 ```
 
 ### Interfaz web (Fase 2)
 
 La página está en **`frontend/index.html`**; la API la sirve en la ruta raíz. Con la API en marcha, abre **http://127.0.0.1:8000/** en el navegador: escribe tu pregunta sobre reglas o lore y pulsa «Preguntar».
+
+UI admin mínima: abre **http://127.0.0.1:8000/admin**.
+
+### Campañas (Fase 3)
+
+Endpoints:
+- `POST /api/campaigns`
+- `GET /api/campaigns`
+- `GET /api/campaigns/{id}`
+- `PATCH /api/campaigns/{id}`
+- `DELETE /api/campaigns/{id}`
 
 ### Probar una consulta (API)
 

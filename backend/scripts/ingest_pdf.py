@@ -1,5 +1,5 @@
 """
-Script de ingesta: indexa PDFs en Chroma.
+Script de ingesta: indexa PDFs en Postgres (pgvector).
 
 - Sin argumentos: busca todos los .pdf en backend/data de forma recursiva y los indexa.
 - Con --pdf RUTA: indexa solo ese PDF.
@@ -16,7 +16,7 @@ from backend.app.ingest import ingest_pdf as run_ingest_pdf
 def main() -> None:
     settings = get_settings()
     parser = argparse.ArgumentParser(
-        description="Ingesta PDFs en Chroma. Sin --pdf se indexan todos los PDFs en backend/data (recursivo)."
+        description="Ingesta PDFs en Postgres (pgvector). Sin --pdf se indexan todos los PDFs en backend/data (recursivo)."
     )
     parser.add_argument(
         "--pdf",
@@ -58,7 +58,7 @@ def main() -> None:
             print(f"Chunks indexados: {result.chunks_indexed}")
         if len(paths) == 1:
             print(f"Colección: {result.collection}")
-            print(f"Persist dir: {result.persist_dir}")
+            print(f"Manifest: {result.manifest_path}")
 
     if len(paths) > 1:
         print("\nListo.")

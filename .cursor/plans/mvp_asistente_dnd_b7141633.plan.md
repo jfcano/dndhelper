@@ -3,7 +3,7 @@ name: MVP_asistente_DnD
 overview: Plan incremental para construir una web que ayude a másters de Dungeons & Dragons a crear mundos y campañas largas usando Python, LangChain y RAG sobre PDFs, evolucionando desde un prototipo mínimo hasta un MVP completo.
 todos:
   - id: fase-1-rag-pdf
-    content: Implementar backend mínimo con LangChain, Chroma (persistido) y embeddings bge-m3 (CPU) para RAG sobre un único PDF; abstraer acceso a embeddings y vector store para facilitar cambios futuros.
+    content: Implementar backend mínimo con LangChain, Postgres+pgvector (persistido) y embeddings bge-m3 (CPU) para RAG sobre un único PDF; abstraer acceso a embeddings y vector store para facilitar cambios futuros.
     status: pending
   - id: fase-2-frontend-basico
     content: Crear una página HTML sencilla que permita al máster hacer preguntas al endpoint de RAG y ver respuestas.
@@ -27,7 +27,7 @@ todos:
     content: Mejorar la experiencia de usuario, soportar múltiples PDFs y preparar despliegue en producción.
     status: pending
   - id: fase-8-vector-db
-    content: Migrar de Chroma a una base vectorial escalable (Qdrant, Weaviate o similar) manteniendo la capa de abstracción.
+    content: Migrar de pgvector a una base vectorial escalable (Qdrant, Weaviate o similar) manteniendo la capa de abstracción.
     status: pending
   - id: fase-8-embeddings-upgrade
     content: Cambiar bge-m3 por un modelo de embeddings de mayor calidad (y/o GPU) manteniendo la abstracción de embeddings.
@@ -50,8 +50,8 @@ Todo ello usando **Python + LangChain** en el backend y un frontend web sencillo
 
 ### Base de datos vectorial
 
-- **Primer prototipo**: usar **Chroma** con `persist_directory` para guardar los embeddings en disco de forma permanente (los PDFs no cambian, se indexan una vez).
-- **Fases posteriores**: el código debe usar una **capa de abstracción** sobre el vector store (factory o interfaz que devuelva un `VectorStore`/`Retriever`). Así, más adelante se podrá cambiar Chroma por una base vectorial escalable (Qdrant, Weaviate, pgvector, etc.) sin tocar la lógica de RAG.
+- **Primer prototipo**: usar **Postgres + pgvector** para guardar los embeddings de forma permanente.
+- **Fases posteriores**: el código debe usar una **capa de abstracción** sobre el vector store (factory o interfaz que devuelva un `VectorStore`/`Retriever`). Así, más adelante se podrá cambiar pgvector por una base vectorial escalable (Qdrant, Weaviate, etc.) sin tocar la lógica de RAG.
 
 ### Modelo de embeddings
 
@@ -82,12 +82,12 @@ Primero, centrarnos en que el "cerebro" funcione.
   - Crear en `backend/app/` algo como `[backend/app/ingest.py](backend/app/ingest.py)` con funciones para:
     - Cargar un PDF (ruta fija o carpeta `data/` para el MVP).
     - Partir en chunks (LangChain `CharacterTextSplitter` o similar).
-  - Guardar los chunks en **Chroma** con `persist_directory` (por ejemplo `backend/storage/chroma_rules/`) para que los embeddings queden guardados de forma permanente.
+  - Guardar los chunks en **Postgres + pgvector** para que los embeddings queden guardados de forma permanente.
   - Comprobar si ya existe el índice para ese PDF; si existe, no recalcular embeddings.
 - **1.2. Abstracción del vector store**
   - Crear un módulo o factory (por ejemplo `[backend/app/vector_store.py](backend/app/vector_store.py)`) que:
     - Exponga una función `get_vector_store()` (o `get_retriever()`) que devuelva el store/retriever a usar.
-    - En el prototipo, implementarlo con Chroma persistido; la firma debe ser independiente del backend concreto para poder sustituir Chroma por Qdrant/Weaviate más adelante.
+    - En el prototipo, implementarlo con PGVector (Postgres); la firma debe ser independiente del backend concreto para poder sustituir por Qdrant/Weaviate más adelante.
 - **1.3. Abstracción de embeddings**
   - Crear un módulo o factory (por ejemplo `[backend/app/embeddings.py](backend/app/embeddings.py)`) que:
     - Exponga `get_embeddings()` para devolver el modelo de embeddings.
@@ -96,7 +96,7 @@ Primero, centrarnos en que el "cerebro" funcione.
 - **1.4. Pipeline de RAG en Python**
   - En `[backend/app/rag.py](backend/app/rag.py)` crear:
     - Uso de `Embeddings` desde la abstracción (prototipo: **bge-m3**).
-    - Uso del retriever obtenido desde la capa de abstracción (no instanciar Chroma directamente en `rag.py`).
+    - Uso del retriever obtenido desde la capa de abstracción (no instanciar PGVector directamente en `rag.py`).
     - Una cadena de RAG: recuperar contextos + llamar al modelo de chat para responder.
   - Para el MVP, configurar un único modelo de lenguaje (por ejemplo, `gpt-4.x` o el que uses) vía LangChain.
 - **1.5. Endpoint de API para preguntas de reglas/lore**
@@ -251,9 +251,9 @@ Este es el paso que convierte la herramienta en un verdadero asistente continuo.
 
 Con el MVP funcional, pulimos y escalamos poco a poco.
 
-- **8.1. Migración de base vectorial (Chroma → escalable)**
-  - Sustituir Chroma por una base vectorial que escale mejor en producción (por ejemplo **Qdrant**, **Weaviate** o **pgvector**), usando la capa de abstracción ya definida en Fase 1.
-  - Script de migración: leer embeddings y metadatos desde Chroma persistido y volcarlos a la nueva base (o re-ingestar los PDFs una vez configurada la nueva DB).
+- **8.1. Migración de base vectorial (pgvector → escalable)**
+  - Sustituir pgvector por una base vectorial que escale mejor en producción (por ejemplo **Qdrant** o **Weaviate**), usando la capa de abstracción ya definida en Fase 1.
+  - Script de migración: leer embeddings y metadatos desde Postgres y volcarlos a la nueva base (o re-ingestar los PDFs una vez configurada la nueva DB).
 - **8.2. Upgrade de embeddings (bge-m3 → mayor calidad)**
   - Cambiar `BAAI/bge-m3` por un modelo de embeddings de mayor calidad (y/o ejecutar en GPU si está disponible), usando la abstracción de embeddings definida en Fase 1.
   - Validar recuperación (precision/recall) con un set pequeño de preguntas representativas de reglas/lore.
@@ -281,7 +281,7 @@ flowchart LR
   user[User_Master] --> frontend[Frontend_Web]
   frontend --> backend[Backend_FastAPI]
   backend --> ragEngine[RAG_LangChain]
-  ragEngine --> pdfStore[VectorStore_Chroma_luego_Qdrant_Weaviate]
+  ragEngine --> pdfStore[VectorStore_PGVector_luego_Qdrant_Weaviate]
   backend --> campaignDB[Campaign_DB]
   backend --> imageService[Image_Generation_API]
 ```
