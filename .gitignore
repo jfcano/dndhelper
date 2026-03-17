@@ -4,10 +4,10 @@ __pycache__/
 .pytest_cache/
 
 # Vector store persistente (mantener si quieres conservar embeddings)
-# backend/storage/
+backend/storage/
 
 # PDFs locales (opcional, depende de si quieres commitearlos)
-backend/data/pdfs/
+backend/data/
 
 # Variables de entorno (claves secretas)
 .env
