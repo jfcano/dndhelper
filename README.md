@@ -54,6 +54,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 ```env
 POSTGRES_URL=postgresql+psycopg://usuario:password@localhost:5432/mi_bd
 OPENAI_EMBEDDINGS_MODEL=text-embedding-3-large
+LOCAL_OWNER_UUID=bec82f4c-14ae-43aa-8c40-f45d950517f1
 ```
 
 - `RAG_COLLECTION` sigue siendo el nombre lógico de la colección (se usa como `collection_name`).
@@ -67,6 +68,13 @@ La tabla `campaigns` se gestiona con **Alembic**.
 # Crear/actualizar tablas
 alembic upgrade head
 ```
+
+### Propietario (usuario local, sin autenticación todavía)
+
+Aunque el MVP no incluye login, el backend **aísla campañas/arcos/sesiones por propietario** usando `LOCAL_OWNER_UUID`.
+
+- Si mantienes un único usuario local, puedes dejar el valor por defecto.
+- Si lo cambias, recuerda que tus campañas existentes en BD seguirán con el `owner_id` anterior (deberías migrarlas o mantener el UUID).
 
 Si cambias modelos, generas una migración nueva con:
 

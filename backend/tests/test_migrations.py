@@ -27,6 +27,9 @@ def test_alembic_upgrade_creates_core_tables(postgres_test_url):
         assert "campaigns" in names
         assert "arcs" in names
         assert "sessions" in names
+
+        cols = {c["name"] for c in insp.get_columns("campaigns")}
+        assert "owner_id" in cols
     finally:
         if old is None:
             os.environ.pop("POSTGRES_URL", None)

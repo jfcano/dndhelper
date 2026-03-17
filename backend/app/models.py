@@ -16,6 +16,7 @@ class Campaign(Base):
     __tablename__ = "campaigns"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     system: Mapped[str] = mapped_column(String(50), nullable=False, default="5e")
     tone: Mapped[str | None] = mapped_column(String(120), nullable=True)

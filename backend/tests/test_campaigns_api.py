@@ -70,3 +70,25 @@ def test_campaigns_pagination_limit_and_offset(db_client):
     assert r2.status_code == 200
     assert len(r2.json()) == 1
 
+
+def test_campaigns_are_isolated_by_local_owner_uuid(db_client, monkeypatch):
+    owner1 = "11111111-1111-1111-1111-111111111111"
+    owner2 = "22222222-2222-2222-2222-222222222222"
+
+    monkeypatch.setenv("LOCAL_OWNER_UUID", owner1)
+    r = db_client.post("/api/campaigns", json={"name": "Owner1"})
+    assert r.status_code == 200
+    cid = r.json()["id"]
+
+    r = db_client.get("/api/campaigns")
+    assert r.status_code == 200
+    assert any(x["id"] == cid for x in r.json())
+
+    monkeypatch.setenv("LOCAL_OWNER_UUID", owner2)
+    r = db_client.get("/api/campaigns")
+    assert r.status_code == 200
+    assert all(x["id"] != cid for x in r.json())
+
+    r = db_client.get(f"/api/campaigns/{cid}")
+    assert r.status_code == 404
+

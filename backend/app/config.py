@@ -15,6 +15,7 @@ class Settings:
     postgres_connect_timeout_s: int
     postgres_create_extension: bool
     default_collection: str
+    local_owner_uuid: str
     openai_api_key: str | None
     openai_model: str
     openai_embeddings_model: str
@@ -35,6 +36,7 @@ def get_settings() -> Settings:
         postgres_connect_timeout_s=int(os.getenv("POSTGRES_CONNECT_TIMEOUT_S", "10")),
         postgres_create_extension=os.getenv("POSTGRES_CREATE_EXTENSION", "true").strip().lower() in ("1", "true", "yes", "y", "on"),
         default_collection=os.getenv("RAG_COLLECTION", "rules_5e"),
+        local_owner_uuid=os.getenv("LOCAL_OWNER_UUID", "bec82f4c-14ae-43aa-8c40-f45d950517f1"),
         openai_api_key=os.getenv("OPENAI_API_KEY"),
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         openai_embeddings_model=os.getenv("OPENAI_EMBEDDINGS_MODEL", "text-embedding-3-large"),

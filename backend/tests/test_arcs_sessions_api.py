@@ -93,3 +93,32 @@ def test_session_create_validation(db_client):
     r = db_client.post(f"/api/arcs/{aid}/sessions", json={"session_number": 0, "title": "x"})
     assert r.status_code == 422
 
+
+def test_arcs_and_sessions_respect_owner_isolation(db_client, monkeypatch):
+    owner1 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    owner2 = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+    monkeypatch.setenv("LOCAL_OWNER_UUID", owner1)
+    cid = _create_campaign(db_client)
+    aid = _create_arc(db_client, cid, title="ArcOwner1")
+    r = db_client.post(f"/api/arcs/{aid}/sessions", json={"session_number": 1, "title": "S1", "status": "planned"})
+    assert r.status_code == 200
+    sid = r.json()["id"]
+
+    # Switch owner -> should not be able to see/access
+    monkeypatch.setenv("LOCAL_OWNER_UUID", owner2)
+    r = db_client.get(f"/api/campaigns/{cid}/arcs")
+    assert r.status_code == 404  # campaign not found for this owner
+
+    r = db_client.get(f"/api/arcs/{aid}")
+    assert r.status_code == 404
+
+    r = db_client.get(f"/api/arcs/{aid}/sessions")
+    assert r.status_code == 404
+
+    r = db_client.get(f"/api/campaigns/{cid}/sessions")
+    assert r.status_code == 404
+
+    r = db_client.get(f"/api/sessions/{sid}")
+    assert r.status_code == 404
+
