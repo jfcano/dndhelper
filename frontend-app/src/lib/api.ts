@@ -45,6 +45,15 @@ export type CampaignUpdate = {
   world_id?: UUID | null
 }
 
+export type CampaignBrief = {
+  kind: string
+  tone?: string | null
+  themes?: string[]
+  starting_level?: number | null
+  inspirations?: string[]
+  constraints?: Record<string, unknown> | null
+}
+
 export class ApiError extends Error {
   status: number
   body: unknown
@@ -89,6 +98,11 @@ export const api = {
   getCampaign: (id: UUID) => request<Campaign>(`/api/campaigns/${id}`),
   patchCampaign: (id: UUID, payload: CampaignUpdate) =>
     request<Campaign>(`/api/campaigns/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  setBrief: (id: UUID, payload: CampaignBrief) =>
+    request<Campaign>(`/api/campaigns/${id}/brief`, { method: 'POST', body: JSON.stringify(payload) }),
+  approveBrief: (id: UUID) => request<Campaign>(`/api/campaigns/${id}/brief/approve`, { method: 'POST', body: '{}' }),
+  generateWorldForCampaign: (id: UUID) =>
+    request<Campaign>(`/api/campaigns/${id}/world:generate`, { method: 'POST', body: '{}' }),
 
   // Worlds
   listWorlds: (limit = 50, offset = 0) =>
