@@ -9,6 +9,8 @@ from fastapi.responses import FileResponse, HTMLResponse
 
 from backend.app.api.rag import router as rag_router
 from backend.app.api.campaigns import router as campaigns_router
+from backend.app.api.arcs import router as arcs_router
+from backend.app.api.sessions import router as sessions_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,6 +25,8 @@ _ADMIN_UI_DIR = Path(__file__).resolve().parents[1] / "admin_ui"
 
 app.include_router(rag_router, prefix="/api")
 app.include_router(campaigns_router, prefix="/api")
+app.include_router(arcs_router, prefix="/api")
+app.include_router(sessions_router, prefix="/api")
 
 
 @app.get("/", response_class=HTMLResponse)

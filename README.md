@@ -53,9 +53,11 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 ```env
 POSTGRES_URL=postgresql+psycopg://usuario:password@localhost:5432/mi_bd
+OPENAI_EMBEDDINGS_MODEL=text-embedding-3-large
 ```
 
 - `RAG_COLLECTION` sigue siendo el nombre lógico de la colección (se usa como `collection_name`).
+- Si cambias el modelo de embeddings, debes **reindexar** (borra la colección/índice y reingesta los PDFs). En este proyecto puedes usar `--force` al ingestar.
 
 ### Migraciones (campañas)
 
@@ -133,6 +135,23 @@ Endpoints:
 - `GET /api/campaigns/{id}`
 - `PATCH /api/campaigns/{id}`
 - `DELETE /api/campaigns/{id}`
+
+### Arcos y sesiones (Fase 3 ampliada)
+
+Endpoints (Arcs):
+- `POST /api/campaigns/{campaign_id}/arcs`
+- `GET /api/campaigns/{campaign_id}/arcs`
+- `GET /api/arcs/{arc_id}`
+- `PATCH /api/arcs/{arc_id}`
+- `DELETE /api/arcs/{arc_id}`
+
+Endpoints (Sessions):
+- `POST /api/arcs/{arc_id}/sessions`
+- `GET /api/arcs/{arc_id}/sessions`
+- `GET /api/campaigns/{campaign_id}/sessions`
+- `GET /api/sessions/{session_id}`
+- `PATCH /api/sessions/{session_id}`
+- `DELETE /api/sessions/{session_id}`
 
 ### Probar una consulta (API)
 
