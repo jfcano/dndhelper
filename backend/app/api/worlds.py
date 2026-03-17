@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from backend.app.db import get_db
 from backend.app.models import World
 from backend.app.owner_context import get_owner_id
-from backend.app.schemas import WorldCreate, WorldOut, WorldUpdate
+from backend.app.schemas import WorldCreate, WorldGenerate, WorldOut, WorldUpdate
+from backend.app.services import generation_service
 
 router = APIRouter(prefix="/worlds", tags=["worlds"])
 
@@ -18,6 +19,25 @@ router = APIRouter(prefix="/worlds", tags=["worlds"])
 def create_world(payload: WorldCreate, db: Session = Depends(get_db)) -> WorldOut:
     owner_id = get_owner_id()
     obj = World(owner_id=owner_id, name=payload.name)
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+@router.post(":generate", response_model=WorldOut)
+def generate_world(payload: WorldGenerate, db: Session = Depends(get_db)) -> WorldOut:
+    owner_id = get_owner_id()
+    gw = generation_service.generate_world_from_description(description=payload.description)
+    obj = World(
+        owner_id=owner_id,
+        name=gw.name,
+        pitch=gw.pitch,
+        tone=gw.tone,
+        themes=gw.themes,
+        content_draft=gw.content_draft,
+        status="draft",
+    )
     db.add(obj)
     db.commit()
     db.refresh(obj)

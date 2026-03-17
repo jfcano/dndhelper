@@ -18,6 +18,10 @@ class WorldUpdate(BaseModel):
     content_draft: str | None = None
 
 
+class WorldGenerate(BaseModel):
+    description: str = Field(min_length=10, max_length=6000, description="Descripción libre del mundo a generar.")
+
+
 class WorldOut(BaseModel):
     id: UUID
     owner_id: UUID

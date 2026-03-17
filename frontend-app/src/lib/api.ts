@@ -35,6 +35,7 @@ export type Campaign = {
 
 export type WorldCreate = { name?: string }
 export type WorldUpdate = Partial<Pick<World, 'name' | 'pitch' | 'tone' | 'themes' | 'content_draft'>>
+export type WorldGenerate = { description: string }
 
 export type CampaignUpdate = {
   name?: string
@@ -109,6 +110,8 @@ export const api = {
     request<World[]>(`/api/worlds?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`),
   getWorld: (id: UUID) => request<World>(`/api/worlds/${id}`),
   createWorld: (payload: WorldCreate) => request<World>(`/api/worlds`, { method: 'POST', body: JSON.stringify(payload) }),
+  generateWorld: (payload: WorldGenerate) =>
+    request<World>(`/api/worlds:generate`, { method: 'POST', body: JSON.stringify(payload) }),
   patchWorld: (id: UUID, payload: WorldUpdate) =>
     request<World>(`/api/worlds/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   approveWorld: (id: UUID) => request<World>(`/api/worlds/${id}/approve`, { method: 'POST', body: '{}' }),

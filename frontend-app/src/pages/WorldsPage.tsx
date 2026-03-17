@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { World } from '../lib/api'
 import { formatError } from '../lib/errors'
 
 export function WorldsPage() {
+  const navigate = useNavigate()
   const [items, setItems] = useState<World[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [description, setDescription] = useState('')
 
   async function reload() {
     setError(null)
@@ -37,6 +40,21 @@ export function WorldsPage() {
     }
   }
 
+  async function onGenerate() {
+    setGenerating(true)
+    setError(null)
+    try {
+      const w = await api.generateWorld({ description })
+      setDescription('')
+      await reload()
+      navigate(`/worlds/${w.id}`)
+    } catch (e) {
+      setError(formatError(e))
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -51,6 +69,35 @@ export function WorldsPage() {
 
       {error && <div style={{ color: 'salmon' }}>{error}</div>}
       {!items && !error && <div>Cargando…</div>}
+
+      <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
+        <h3 style={{ marginTop: 0 }}>Generar world (independiente)</h3>
+        <div style={{ opacity: 0.8, fontSize: 13 }}>
+          Describe el mundo con libertad (género, tono, regiones, facciones, magia/tecnología, inspiración, límites…).
+        </div>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={7}
+          placeholder="Ej: Un archipiélago de islas flotantes gobernadas por casas mercantes..."
+          style={{
+            width: '100%',
+            marginTop: 10,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontSize: 13,
+            padding: 10,
+            borderRadius: 10,
+            border: '1px solid rgba(255,255,255,0.12)',
+            background: 'rgba(0,0,0,0.25)',
+            color: 'inherit',
+          }}
+        />
+        <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={() => void onGenerate()} disabled={generating || description.trim().length < 10}>
+            {generating ? 'Generando…' : 'Generar'}
+          </button>
+        </div>
+      </div>
 
       {items && (
         <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, overflow: 'hidden' }}>

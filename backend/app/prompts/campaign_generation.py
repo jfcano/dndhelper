@@ -18,6 +18,20 @@ WORLD_JSON_SCHEMA_HINT = {
     },
 }
 
+WORLD_FROM_DESCRIPTION_JSON_SCHEMA_HINT = {
+    "name": "Nombre del mundo (corto).",
+    "pitch": "Elevator pitch (2-3 frases).",
+    "tone": "Tono (p. ej. oscuro, heroico, pulp).",
+    "themes": {
+        "themes": ["lista de temas"],
+        "safety": {"lines": ["..."], "veils": ["..."]},
+    },
+    "content_draft": (
+        "Texto en Markdown, editable por el usuario, con secciones claras (panorama, regiones, facciones, PNJs, "
+        "secretos, ganchos, notas para el DM)."
+    ),
+}
+
 
 OUTLINE_JSON_SCHEMA_HINT = {
     "campaign_title": "Título de la campaña.",
@@ -83,6 +97,17 @@ def world_prompt_es(*, brief: dict) -> str:
         f"{brief}\n\n"
         "Salida requerida: JSON con esta estructura aproximada:\n"
         f"{WORLD_JSON_SCHEMA_HINT}\n"
+    )
+
+
+def world_from_description_prompt_es(*, description: str) -> str:
+    return (
+        "Genera un mundo para una campaña de rol a partir de la descripción del usuario.\n"
+        "Objetivo: crear un texto editable y útil para usar como referencia en campañas.\n\n"
+        "Input (descripción del usuario):\n"
+        f"{description}\n\n"
+        "Salida requerida: JSON con esta estructura aproximada:\n"
+        f"{WORLD_FROM_DESCRIPTION_JSON_SCHEMA_HINT}\n"
     )
 
 

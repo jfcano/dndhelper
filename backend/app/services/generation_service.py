@@ -12,6 +12,7 @@ from backend.app.prompts.campaign_generation import (
     outline_prompt_es,
     sessions_prompt_es,
     system_rules_es,
+    world_from_description_prompt_es,
     world_prompt_es,
 )
 
@@ -29,6 +30,15 @@ class GeneratedWorld:
 class GeneratedOutline:
     campaign_title: str | None
     raw: dict
+
+
+@dataclass(frozen=True)
+class GeneratedWorldFromDescription:
+    name: str
+    tone: str | None
+    pitch: str | None
+    themes: dict | None
+    content_draft: str
 
 
 def _get_llm() -> ChatOpenAI:
@@ -63,6 +73,27 @@ def generate_world(*, brief: dict) -> GeneratedWorld:
         pitch=raw.get("pitch"),
         themes=raw.get("themes"),
         draft=raw.get("draft") if isinstance(raw.get("draft"), dict) else raw,
+    )
+
+
+def generate_world_from_description(*, description: str) -> GeneratedWorldFromDescription:
+    llm = _get_llm()
+    messages = [
+        ("system", system_rules_es()),
+        ("user", world_from_description_prompt_es(description=description)),
+    ]
+    raw = _parse_json(llm.invoke(messages).content)
+
+    content = raw.get("content_draft")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("Salida inválida: falta 'content_draft' como texto.")
+
+    return GeneratedWorldFromDescription(
+        name=str(raw.get("name") or "Nuevo mundo"),
+        tone=raw.get("tone"),
+        pitch=raw.get("pitch"),
+        themes=raw.get("themes"),
+        content_draft=content,
     )
 
 
