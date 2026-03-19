@@ -35,7 +35,36 @@ export type Campaign = {
 
 export type WorldCreate = { name?: string }
 export type WorldUpdate = Partial<Pick<World, 'name' | 'pitch' | 'tone' | 'themes' | 'content_draft'>>
-export type WorldGenerate = { description: string }
+export type WorldWizardFactionInput = {
+  name: string
+  objective: string
+}
+
+export type WorldWizardCharacterInput = {
+  name: string
+  faction_name: string
+  role: string
+  motivation: string
+}
+
+export type WorldWizardCityInput = {
+  name: string
+  theme: string
+  relations: string[]
+}
+
+export type WorldGenerate = {
+  theme_and_mood: string
+  factions: WorldWizardFactionInput[]
+  characters: WorldWizardCharacterInput[]
+  cities: WorldWizardCityInput[]
+}
+export type WorldUsage = { campaign_count: number }
+export type WorldWizardAutogenerateRequest = { step: 0 | 1 | 2 | 3; wizard: WorldGenerate }
+export type WorldWizardAutogenerateResponse = {
+  step: number
+  patch: Partial<Pick<WorldGenerate, 'theme_and_mood' | 'factions' | 'characters' | 'cities'>>
+}
 
 export type CampaignUpdate = {
   name?: string
@@ -112,8 +141,15 @@ export const api = {
   createWorld: (payload: WorldCreate) => request<World>(`/api/worlds`, { method: 'POST', body: JSON.stringify(payload) }),
   generateWorld: (payload: WorldGenerate) =>
     request<World>(`/api/worlds:generate`, { method: 'POST', body: JSON.stringify(payload) }),
+  autogenerateWorldWizardStep: (payload: WorldWizardAutogenerateRequest) =>
+    request<WorldWizardAutogenerateResponse>(`/api/worlds:wizard/autogenerate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getWorldUsage: (id: UUID) => request<WorldUsage>(`/api/worlds/${id}/usage`),
   patchWorld: (id: UUID, payload: WorldUpdate) =>
     request<World>(`/api/worlds/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   approveWorld: (id: UUID) => request<World>(`/api/worlds/${id}/approve`, { method: 'POST', body: '{}' }),
+  deleteWorld: (id: UUID) => request<{ ok: boolean }>(`/api/worlds/${id}`, { method: 'DELETE' }),
 }
 

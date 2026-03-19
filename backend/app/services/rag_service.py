@@ -2,27 +2,13 @@ from __future__ import annotations
 
 import logging
 
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 from backend.app.config import get_settings
+from backend.app.prompts.loader import render_prompt_template
 from backend.app.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
-
-_PROMPT = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            "Eres un asistente para un Máster de Dungeons & Dragons. "
-            "Responde en español, de forma útil y concisa. "
-            "Usa únicamente la información del CONTEXTO cuando sea relevante; "
-            "si no hay suficiente información en el contexto, dilo explícitamente y sugiere qué buscar.\n\n"
-            "CONTEXTO:\n{context}",
-        ),
-        ("human", "{question}"),
-    ]
-)
 
 
 def answer_question(question: str, *, k: int = 4) -> dict:
@@ -47,7 +33,11 @@ def answer_question(question: str, *, k: int = 4) -> dict:
     )
 
     llm = ChatOpenAI(model=settings.openai_model, api_key=settings.openai_api_key)
-    messages = _PROMPT.format_messages(context=context, question=question)
+    system_prompt = render_prompt_template("rag_system.txt", {"__CONTEXT__": context})
+    messages = [
+        ("system", system_prompt),
+        ("human", question),
+    ]
     resp = llm.invoke(messages)
 
     answer = getattr(resp, "content", str(resp))

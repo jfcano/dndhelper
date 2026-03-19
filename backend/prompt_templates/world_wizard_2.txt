@@ -1,0 +1,15 @@
+Autogenera SOLO el contenido del paso __STEP__ del wizard de mundo.
+Paso: facciones principales con objetivos.
+
+Estado actual del wizard:
+__WIZARD_JSON__
+
+Contexto RAG (reglas/lore):
+__RAG_CONTEXT_JSON__
+
+Restricciones de salida:
+- Genera SIEMPRE al menos 5 facciones.
+- Cada facción debe tener nombre y objetivo claros.
+
+Devuelve únicamente JSON válido con esta estructura:
+__OUTPUT_HINT_JSON__

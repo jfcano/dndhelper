@@ -19,9 +19,9 @@ class World(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
 
-    name: Mapped[str] = mapped_column(String(200), nullable=False, default="Nuevo mundo", server_default="Nuevo mundo")
+    name: Mapped[str] = mapped_column(Text, nullable=False, default="Nuevo mundo", server_default="Nuevo mundo")
     pitch: Mapped[str | None] = mapped_column(Text, nullable=True)
-    tone: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    tone: Mapped[str | None] = mapped_column(Text, nullable=True)
     themes: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     content_draft: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -48,9 +48,9 @@ class Campaign(Base):
         nullable=True,
         index=True,
     )
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
     system: Mapped[str] = mapped_column(String(50), nullable=False, default="5e")
-    tone: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    tone: Mapped[str | None] = mapped_column(Text, nullable=True)
     starting_level: Mapped[int | None] = mapped_column(Integer, nullable=True)
     goals: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -82,7 +82,7 @@ class Arc(Base):
         index=True,
     )
 
-    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     approval_status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft")
@@ -114,7 +114,7 @@ class Session(Base):
     )
 
     session_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="planned")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

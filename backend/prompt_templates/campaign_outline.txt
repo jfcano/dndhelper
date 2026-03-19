@@ -1,0 +1,27 @@
+Genera el guión general (outline) de una campaña.
+Input (brief):
+__BRIEF_JSON__
+
+Input (world):
+__WORLD_JSON__
+
+Salida requerida: JSON con esta estructura aproximada:
+{
+  "campaign_title": "Título de la campaña.",
+  "logline": "Logline (1 frase).",
+  "premise": "Premisa (3-6 frases).",
+  "player_pitch": "Texto breve para jugadores.",
+  "constraints": {"system": "5e", "starting_level": 1},
+  "stakes": ["qué está en juego"],
+  "core_conflicts": ["conflictos centrales"],
+  "recommended_arc_count": 3,
+  "arc_seeds": [
+    {
+      "title": "Nombre del arco",
+      "summary": "Resumen",
+      "order_index": 1,
+      "key_locations": ["..."],
+      "key_npcs": ["..."]
+    }
+  ]
+}

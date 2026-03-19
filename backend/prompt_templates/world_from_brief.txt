@@ -1,0 +1,22 @@
+Genera un borrador de mundo coherente para una campaña.
+Input (brief):
+__BRIEF_JSON__
+
+Salida requerida: JSON con esta estructura aproximada:
+{
+  "name": "Nombre del mundo (corto).",
+  "pitch": "Elevator pitch (2-3 frases).",
+  "tone": "Tono (p. ej. oscuro, heroico, pulp).",
+  "themes": {
+    "themes": ["lista de temas"],
+    "safety": {"lines": ["..."], "veils": ["..."]}
+  },
+  "draft": {
+    "overview": "Resumen general del mundo.",
+    "regions": [{"name": "Región", "summary": "..."}],
+    "factions": [{"name": "Facción", "goal": "...", "methods": "..."}],
+    "major_npcs": [{"name": "PNJ", "role": "...", "hook": "..."}],
+    "secrets": ["Secretos (para el DM)"],
+    "adventure_hooks": ["Ganchos de aventura"]
+  }
+}

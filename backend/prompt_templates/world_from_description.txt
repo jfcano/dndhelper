@@ -1,0 +1,17 @@
+Genera un mundo para una campaña de rol a partir de la descripción del usuario.
+Objetivo: crear un texto editable y útil para usar como referencia en campañas.
+
+Input (descripción del usuario):
+__DESCRIPTION__
+
+Salida requerida: JSON con esta estructura aproximada:
+{
+  "name": "Nombre del mundo (corto).",
+  "pitch": "Elevator pitch (2-3 frases).",
+  "tone": "Tono (p. ej. oscuro, heroico, pulp).",
+  "themes": {
+    "themes": ["lista de temas"],
+    "safety": {"lines": ["..."], "veils": ["..."]}
+  },
+  "content_draft": "Texto en Markdown editable con secciones claras (panorama, regiones, facciones, PNJs, secretos, ganchos, notas DM)."
+}

@@ -1,0 +1,29 @@
+Genera un mundo de campaña totalmente jugable a partir de respuestas estructuradas del usuario.
+Debes integrar TODO el input sin perder coherencia y devolver un borrador completo editable con una longitud muy amplia.
+Tómate todo el tiempo que necesites para que la respuesta sea lo más elaborada posible.
+No puedes omitir ningun elemento de entrada: cada faccion, personaje y ciudad/pueblo debe aparecer reflejado en la salida.
+
+Input (temática general):
+__THEME_AND_MOOD__
+
+Input (facciones principales con objetivos):
+__FACTIONS_JSON__
+
+Input (personajes importantes por facción):
+__CHARACTERS_JSON__
+
+Input (ciudades y relaciones):
+__CITIES_JSON__
+
+Salida requerida: JSON con esta estructura aproximada:
+{
+  "name": "Nombre del mundo (corto).",
+  "pitch": "Elevator pitch (2-3 frases).",
+  "tone": "Tono principal del mundo.",
+  "themes": {
+    "themes": ["lista de temas principales"],
+    "factions": [{"name": "...", "objective": "..."}],
+    "cities": [{"name": "...", "theme": "..."}]
+  },
+  "content_draft": "Texto en Markdown, completo y editable, que incluya tono/ambiente, facciones, personajes por facción, ciudades y relaciones, conflictos, secretos DM y ganchos jugables."
+}
