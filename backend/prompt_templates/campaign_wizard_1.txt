@@ -1,0 +1,11 @@
+Autogenera SOLO el contenido del paso __STEP__ del wizard de campaña.
+Paso (__STEP_LABEL__): define tipo y tono de campaña.
+
+Estado actual del wizard:
+__WIZARD_JSON__
+
+Contexto RAG (reglas/lore):
+__RAG_CONTEXT_JSON__
+
+Devuelve únicamente JSON válido con esta estructura:
+__OUTPUT_HINT_JSON__

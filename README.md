@@ -71,7 +71,7 @@ alembic upgrade head
 
 ### Propietario (usuario local, sin autenticación todavía)
 
-Aunque el MVP no incluye login, el backend **aísla campañas/arcos/sesiones por propietario** usando `LOCAL_OWNER_UUID`.
+Aunque el MVP no incluye login, el backend **aísla campañas/sesiones por propietario** usando `LOCAL_OWNER_UUID`.
 
 - Si mantienes un único usuario local, puedes dejar el valor por defecto.
 - Si lo cambias, recuerda que tus campañas existentes en BD seguirán con el `owner_id` anterior (deberías migrarlas o mantener el UUID).
@@ -184,13 +184,8 @@ Flujo recomendado (con aprobación entre fases):
    - `PATCH /api/campaigns/{campaign_id}/outline` (editar borrador)
    - `POST /api/campaigns/{campaign_id}/outline/approve`
 
-4. **Arcos**
-   - `POST /api/campaigns/{campaign_id}/arcs:generate?arc_count=3`
-   - `PATCH /api/arcs/{arc_id}` (editar)
-   - `POST /api/arcs/{arc_id}/approve`
-
-5. **Sesiones**
-   - `POST /api/arcs/{arc_id}/sessions:generate?session_count=3`
+4. **Sesiones**
+   - `POST /api/campaigns/{campaign_id}/sessions:generate?session_count=3`
    - `PATCH /api/sessions/{session_id}` (editar; incluye `content_draft`)
    - `POST /api/sessions/{session_id}/approve`
 
@@ -198,18 +193,10 @@ Notas:
 - El backend usa `LOCAL_OWNER_UUID` (MVP sin login) para aislar datos por propietario.
 - Para usar generación real necesitas `OPENAI_API_KEY` (se usa `OPENAI_MODEL`).
 
-### Arcos y sesiones (Fase 3 ampliada)
+### Sesiones (Fase 3 ampliada)
 
-Endpoints (Arcs):
-- `POST /api/campaigns/{campaign_id}/arcs`
-- `GET /api/campaigns/{campaign_id}/arcs`
-- `GET /api/arcs/{arc_id}`
-- `PATCH /api/arcs/{arc_id}`
-- `DELETE /api/arcs/{arc_id}`
-
-Endpoints (Sessions):
-- `POST /api/arcs/{arc_id}/sessions`
-- `GET /api/arcs/{arc_id}/sessions`
+Endpoints:
+- `POST /api/campaigns/{campaign_id}/sessions:generate?session_count=3`
 - `GET /api/campaigns/{campaign_id}/sessions`
 - `GET /api/sessions/{session_id}`
 - `PATCH /api/sessions/{session_id}`

@@ -10,7 +10,9 @@ from backend.app.config import get_settings
 from backend.app.prompts.loader import render_prompt_template
 from backend.app.services.rag_service import answer_question
 from backend.app.prompts.campaign_generation import (
-    arcs_prompt_es,
+    campaign_wizard_step_prompt_es,
+    campaign_story_draft_prompt_es,
+    campaign_story_markdown_system_rules_es,
     outline_prompt_es,
     sessions_prompt_es,
     system_rules_es,
@@ -372,22 +374,53 @@ def generate_outline(*, brief: dict, world: dict) -> GeneratedOutline:
     return GeneratedOutline(campaign_title=raw.get("campaign_title"), raw=raw)
 
 
-def generate_arcs(*, outline: dict, arc_count: int) -> list[dict]:
+def generate_campaign_story_draft(*, brief: dict, world: dict) -> str:
+    """
+    Genera el resumen narrativo en Markdown (borrador editable) a partir del wizard.
+    - Usa RAG+LLM para contextualizar el tono/reglas/lore
+    - Ambientado en el contenido del mundo proporcionado
+    """
     llm = _get_llm()
+
+    world_name = str(world.get("name") or "Mundo")
+    world_content = str(world.get("content_final") or world.get("content_draft") or world.get("content") or "").strip()
+    # Limitamos el fragmento para evitar prompts gigantes.
+    world_content_snippet = world_content[:6000]
+
+    # Pregunta corta para recuperación de contexto relevante.
+    rag_question = (
+        "Necesito contexto lore/reglas y referencias para escribir un resumen narrativo de una campaña. "
+        f"tipo={brief.get('kind')}, tono={brief.get('tone')}, temas={brief.get('themes')}, nivel_inicial={brief.get('starting_level')}. "
+        f"Mundo={world_name}. "
+        "Incluye ideas coherentes con restricciones definidas en brief.constraints.notes si existen. "
+        "Devuelve contexto que ayude a redactar secciones de historia para un DM."
+    )
+    rag = answer_question(rag_question, k=6)
+    rag_context = {
+        "answer": rag.get("answer", ""),
+        "sources": rag.get("sources", []),
+    }
+
+    prompt = campaign_story_draft_prompt_es(
+        world_name=world_name,
+        world_content=world_content_snippet,
+        brief=brief,
+        rag_context=rag_context,
+    )
+
     messages = [
-        ("system", system_rules_es()),
-        ("user", arcs_prompt_es(outline=outline, arc_count=arc_count)),
+        ("system", campaign_story_markdown_system_rules_es()),
+        ("user", prompt),
     ]
-    raw = _parse_json(llm.invoke(messages).content)
-    arcs = raw.get("arcs")
-    if not isinstance(arcs, list):
-        raise ValueError("Salida inválida: falta 'arcs' como lista.")
-    return [a for a in arcs if isinstance(a, dict)]
+    story = getattr(llm.invoke(messages), "content", "")
+    story_text = str(story).strip()
+    if not story_text:
+        raise ValueError("Salida inválida: falta el texto del resumen en Markdown.")
+    return story_text
 
 
 def generate_sessions(
     *,
-    arc: dict,
     outline: dict,
     session_count: int,
     starting_session_number: int,
@@ -396,7 +429,6 @@ def generate_sessions(
     messages = [
         ("system", system_rules_es()),
         ("user", sessions_prompt_es(
-            arc=arc,
             outline=outline,
             session_count=session_count,
             starting_session_number=starting_session_number,
@@ -528,4 +560,80 @@ def autogenerate_world_wizard_step(*, step: int, wizard: dict[str, Any]) -> dict
     if not isinstance(cities, list) or not cities:
         raise ValueError("Autogeneración inválida para step 3.")
     return {"cities": _normalize_cities([c for c in cities if isinstance(c, dict)], flavor=flavor)}
+
+
+def _campaign_clean_list(values: Any, *, default: str) -> list[str]:
+    if not isinstance(values, list):
+        return [default]
+    cleaned = [str(v).strip() for v in values if str(v).strip()]
+    return cleaned or [default]
+
+
+def autogenerate_campaign_wizard_step(*, step: int, wizard: dict[str, Any]) -> dict[str, Any]:
+    step_map = {
+        0: "tipo y tono",
+        1: "temas principales",
+        2: "nivel inicial y restricciones",
+        3: "inspiraciones",
+    }
+    if step not in step_map:
+        raise ValueError("Paso inválido para autogeneración.")
+
+    output_hints = {
+        0: {
+            "kind": "tipo de campaña",
+            "tone": "tono de campaña",
+        },
+        1: {
+            "themes": ["tema 1", "tema 2", "tema 3"],
+        },
+        2: {
+            "starting_level": 1,
+            "constraints": {"notes": "restricciones y límites de mesa"},
+        },
+        3: {
+            "inspirations": ["inspiración 1", "inspiración 2"],
+        },
+    }
+
+    step_number = step + 1
+    rag_question = campaign_wizard_step_prompt_es(
+        step=step_number,
+        step_label=step_map[step],
+        wizard=wizard,
+        rag_context={},
+        output_hint={"note": "Consulta breve para recuperación"},
+    )[:1500]
+    rag = answer_question(rag_question, k=6)
+    rag_context = {
+        "answer": rag.get("answer", ""),
+        "sources": rag.get("sources", []),
+    }
+
+    llm = _get_llm()
+    prompt = campaign_wizard_step_prompt_es(
+        step=step_number,
+        step_label=step_map[step],
+        wizard=wizard,
+        rag_context=rag_context,
+        output_hint=output_hints[step],
+    )
+    raw = _parse_json(llm.invoke([("system", system_rules_es()), ("user", prompt)]).content)
+
+    if step == 0:
+        kind = _clean_text(raw.get("kind"), default="sandbox")
+        tone = _as_opt_str(raw.get("tone")) or "heroico"
+        return {"kind": kind, "tone": tone}
+    if step == 1:
+        return {"themes": _campaign_clean_list(raw.get("themes"), default="aventura")}
+    if step == 2:
+        level_raw = raw.get("starting_level")
+        level = int(level_raw) if isinstance(level_raw, int) or (isinstance(level_raw, str) and level_raw.isdigit()) else 1
+        level = max(1, min(level, 20))
+        constraints = raw.get("constraints")
+        if not isinstance(constraints, dict):
+            constraints = {"notes": _clean_text(constraints, default="Sin restricciones especiales.")}
+        return {"starting_level": level, "constraints": constraints}
+
+    return {"inspirations": _campaign_clean_list(raw.get("inspirations"), default="fantasía clásica")}
 

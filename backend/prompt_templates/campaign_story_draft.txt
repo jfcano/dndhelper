@@ -1,0 +1,35 @@
+Genera un texto borrador en Markdown para resumir la historia completa y el marco de una campaña, ambientado de forma coherente en el mundo indicado.
+
+OBJETIVO
+- Producir un texto legible para un DM.
+- El resultado debe poder modificarse antes de aprobarse.
+- Devuelve únicamente texto en Markdown válido (sin JSON).
+
+INPUTS
+- Mundo (referencia):
+  - Nombre: __WORLD_NAME__
+  - Contenido relevante del mundo (puede estar abreviado): 
+__WORLD_CONTENT__
+
+- Brief de campaña (wizard, JSON):
+__BRIEF_JSON__
+
+- Contexto RAG (reglas/lore relevantes):
+__RAG_CONTEXT_JSON__
+
+REQUISITOS OBLIGATORIOS
+1. Debe tener en cuenta las decisiones tomadas en el Brief de campaña
+2. La historia debe reflejar las facciones/ciudades/personajes del mundo usando el contenido del mundo.
+3. No inventes restricciones que no estén en el brief.
+4. Estructura recomendada (usa exactamente estos encabezados):
+   ## Historia completa
+   ## Tensiones y conflictos
+   ## Facciones implicadas
+   ## Personajes implicados
+   ## Relaciones con los temas propuestos
+   ## Puntos clave del mundo implicados en la historia (apoyado en el contenido del mundo)
+
+FORMATO
+- Usa listas con guiones `- ` cuando tengas varios ítems.
+- Respeta la legibilidad para edición manual.
+- La historia debe de ser larga para permitir generar sesiones y ganchos argumentales que cuelguen de la misma

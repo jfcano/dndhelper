@@ -9,11 +9,20 @@ import json
 
 from backend.app import crud
 from backend.app.db import get_db
-from backend.app.models import Campaign, World
+from backend.app.models import Campaign, Session as CampaignSession, World
 from backend.app.owner_context import get_owner_id
-from backend.app.schemas import CampaignBrief, CampaignCreate, CampaignOut, CampaignUpdate
+from backend.app.schemas import (
+    CampaignBrief,
+    CampaignCreate,
+    CampaignOut,
+    CampaignUpdate,
+    CampaignWizardAutogenerateRequest,
+    CampaignStoryUpdate,
+    SessionCreate,
+    SessionOut,
+)
 from backend.app.services import generation_service
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -56,6 +65,33 @@ def delete(campaign_id: UUID, db: Session = Depends(get_db)) -> dict:
     obj = crud.get_campaign(db, owner_id, campaign_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
+
+    reasons: list[str] = []
+    # Bloqueamos el borrado solo si existe contenido real en `brief_final`.
+    # `brief_status` puede quedar inconsistente con datos históricos.
+    if obj.brief_status == "approved" and obj.brief_final:
+        reasons.append("brief aprobado")
+    if obj.brief_status == "approved" and obj.story_final:
+        reasons.append("resumen de historia aprobado")
+    if obj.outline_draft or obj.outline_final:
+        reasons.append("outline generado")
+
+    sessions_count = int(
+        db.execute(select(func.count(CampaignSession.id)).where(CampaignSession.campaign_id == campaign_id)).scalar_one() or 0
+    )
+    if sessions_count > 0:
+        reasons.append(f"{sessions_count} sesión(es)")
+
+    if reasons:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "No se puede borrar la campaign porque tiene contenido generado: "
+                + ", ".join(reasons)
+                + "."
+            ),
+        )
+
     crud.delete_campaign(db, obj)
     return {"ok": True}
 
@@ -71,7 +107,40 @@ def set_brief(campaign_id: UUID, payload: CampaignBrief, db: Session = Depends(g
     db.add(obj)
     db.commit()
     db.refresh(obj)
+
+    # Tras finalizar el wizard, generamos automáticamente el resumen narrativo.
+    if not obj.world_id:
+        raise HTTPException(status_code=400, detail="La campaign debe tener world_id vinculado para generar el resumen.")
+
+    stmt = select(World).where(World.id == obj.world_id, World.owner_id == owner_id)
+    world = db.execute(stmt).scalars().first()
+    if not world:
+        raise HTTPException(status_code=404, detail="Mundo no encontrado (vinculado a la campaign).")
+
+    world_payload = {
+        "name": world.name,
+        "tone": world.tone,
+        "pitch": world.pitch,
+        "content_final": world.content_final,
+        "content_draft": world.content_draft,
+        "status": world.status,
+    }
+
+    obj.story_draft = generation_service.generate_campaign_story_draft(brief=obj.brief_draft, world=world_payload)
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+
     return obj
+
+
+@router.post(":wizard/autogenerate")
+def autogenerate_campaign_wizard_step(payload: CampaignWizardAutogenerateRequest) -> dict:
+    patch = generation_service.autogenerate_campaign_wizard_step(
+        step=payload.step,
+        wizard=payload.wizard.model_dump(),
+    )
+    return {"step": payload.step, "patch": patch}
 
 
 @router.patch("/{campaign_id}/brief", response_model=CampaignOut)
@@ -88,8 +157,94 @@ def approve_brief(campaign_id: UUID, db: Session = Depends(get_db)) -> CampaignO
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
     if not obj.brief_draft:
         raise HTTPException(status_code=400, detail="No hay brief_draft para aprobar.")
+
+    if not obj.world_id:
+        raise HTTPException(status_code=400, detail="La campaign debe tener world_id vinculado para aprobar el resumen.")
+
+    # Aseguramos que exista story_draft antes de aprobar.
+    if not obj.story_draft:
+        if not obj.world_id:
+            raise HTTPException(status_code=400, detail="La campaign debe tener world_id vinculado para aprobar el resumen.")
+        stmt = select(World).where(World.id == obj.world_id, World.owner_id == owner_id)
+        world = db.execute(stmt).scalars().first()
+        if not world:
+            raise HTTPException(status_code=404, detail="Mundo no encontrado (vinculado a la campaign).")
+        world_payload = {
+            "name": world.name,
+            "tone": world.tone,
+            "pitch": world.pitch,
+            "content_final": world.content_final,
+            "content_draft": world.content_draft,
+            "status": world.status,
+        }
+        obj.story_draft = generation_service.generate_campaign_story_draft(brief=obj.brief_draft, world=world_payload)
+
     obj.brief_final = obj.brief_draft
     obj.brief_status = "approved"
+    obj.story_final = obj.story_draft
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+@router.post("/{campaign_id}/reopen", response_model=CampaignOut)
+def reopen_campaign(campaign_id: UUID, db: Session = Depends(get_db)) -> CampaignOut:
+    owner_id = get_owner_id()
+    obj = crud.get_campaign(db, owner_id, campaign_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Campaign no encontrada.")
+
+    # Volver a borrador mantiene el contenido final como base editable.
+    if obj.brief_final:
+        obj.brief_draft = obj.brief_final
+    obj.brief_status = "draft"
+
+    if obj.story_final:
+        obj.story_draft = obj.story_final
+
+    if obj.outline_final:
+        obj.outline_draft = obj.outline_final
+    elif obj.outline_draft:
+        # Si hay outline_draft previo, también se considera borrador al reabrir campaña.
+        obj.outline_draft = obj.outline_draft
+    obj.outline_status = "draft"
+
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+@router.patch("/{campaign_id}/story", response_model=CampaignOut)
+def patch_story(campaign_id: UUID, payload: CampaignStoryUpdate, db: Session = Depends(get_db)) -> CampaignOut:
+    owner_id = get_owner_id()
+    obj = crud.get_campaign(db, owner_id, campaign_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Campaign no encontrada.")
+    if obj.brief_status == "approved":
+        raise HTTPException(status_code=409, detail="No se puede editar el resumen de historia mientras está aprobado. Reabrir a borrador primero.")
+    if not obj.world_id:
+        raise HTTPException(status_code=400, detail="La campaign debe tener world_id vinculado para editar el resumen de historia.")
+    obj.story_draft = payload.story_draft
+    if payload.story_draft is None:
+        obj.story_final = None
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+@router.post("/{campaign_id}/story/reset", response_model=CampaignOut)
+def reset_campaign_story(campaign_id: UUID, db: Session = Depends(get_db)) -> CampaignOut:
+    owner_id = get_owner_id()
+    obj = crud.get_campaign(db, owner_id, campaign_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Campaign no encontrada.")
+    if obj.brief_status == "approved":
+        raise HTTPException(status_code=409, detail="No se puede resetear el resumen de historia mientras está aprobado. Reabrir a borrador primero.")
+    obj.story_draft = None
+    obj.story_final = None
     db.add(obj)
     db.commit()
     db.refresh(obj)
@@ -159,6 +314,57 @@ def generate_outline_for_campaign(campaign_id: UUID, db: Session = Depends(get_d
     db.commit()
     db.refresh(campaign)
     return campaign
+
+
+@router.post("/{campaign_id}/sessions:generate", response_model=list[SessionOut])
+def generate_sessions_for_campaign(
+    campaign_id: UUID, session_count: int = 3, db: Session = Depends(get_db)
+) -> list[SessionOut]:
+    owner_id = get_owner_id()
+    campaign = crud.get_campaign(db, owner_id, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign no encontrada.")
+    if campaign.outline_status != "approved" or not campaign.outline_final:
+        raise HTTPException(status_code=400, detail="El outline debe estar aprobado antes de generar sesiones.")
+    if not campaign.world_id:
+        raise HTTPException(status_code=400, detail="La campaign debe tener world_id vinculado para generar sesiones.")
+
+    outline_payload = {"outline": campaign.outline_final}
+
+    sessions_raw = generation_service.generate_sessions(
+        outline=outline_payload,
+        session_count=max(1, min(session_count, 20)),
+        starting_session_number=1,
+    )
+
+    created: list[SessionOut] = []
+    for s in sessions_raw:
+        try:
+            session_number = int(s.get("session_number") or 1)
+        except Exception:
+            session_number = 1
+        title = str(s.get("title") or f"Sesión {session_number}")
+        summary = s.get("summary")
+        content = s.get("content_draft")
+        obj = crud.create_session(
+            db,
+            owner_id,
+            campaign_id,
+            SessionCreate(session_number=session_number, title=title, summary=summary, status="planned"),
+        )
+        # persistir detalle como draft
+        if isinstance(content, (dict, list)):
+            obj.content_draft = json.dumps(content, ensure_ascii=False)
+        elif content is not None:
+            obj.content_draft = str(content)
+        else:
+            obj.content_draft = json.dumps(s, ensure_ascii=False)
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
+        created.append(obj)
+
+    return created
 
 
 @router.patch("/{campaign_id}/outline", response_model=CampaignOut)

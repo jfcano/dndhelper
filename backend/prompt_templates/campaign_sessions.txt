@@ -1,8 +1,5 @@
-A partir del arco y el outline, genera sesiones MUY detalladas para un DM.
+A partir del outline, genera sesiones MUY detalladas para un DM.
 Quiero exactamente __SESSION_COUNT__ sesiones empezando por session_number=__STARTING_SESSION_NUMBER__.
-Input (arc):
-__ARC_JSON__
-
 Input (outline):
 __OUTLINE_JSON__
 

@@ -14,6 +14,11 @@ export function formatError(e: unknown): string {
     if (ae.status === 502 || ae.status === 503 || ae.status === 504) {
       return backendDownMessage()
     }
+    // Cuando backend devuelve FastAPI HTTPException, intentamos mostrar detail.
+    if (ae.body && typeof ae.body === 'object' && 'detail' in ae.body) {
+      const detail = (ae.body as { detail?: unknown }).detail
+      if (typeof detail === 'string' && detail.trim()) return detail
+    }
     return ae.message
   }
 

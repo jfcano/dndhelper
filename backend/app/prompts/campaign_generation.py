@@ -54,25 +54,55 @@ def outline_prompt_es(*, brief: dict, world: dict) -> str:
         },
     )
 
-
-def arcs_prompt_es(*, outline: dict, arc_count: int) -> str:
-    return render_prompt_template(
-        "campaign_arcs.txt",
-        {
-            "__ARC_COUNT__": str(arc_count),
-            "__OUTLINE_JSON__": json.dumps(outline, ensure_ascii=False, indent=2),
-        },
-    )
-
-
-def sessions_prompt_es(*, arc: dict, outline: dict, session_count: int, starting_session_number: int) -> str:
+def sessions_prompt_es(*, outline: dict, session_count: int, starting_session_number: int) -> str:
     return render_prompt_template(
         "campaign_sessions.txt",
         {
             "__SESSION_COUNT__": str(session_count),
             "__STARTING_SESSION_NUMBER__": str(starting_session_number),
-            "__ARC_JSON__": json.dumps(arc, ensure_ascii=False, indent=2),
             "__OUTLINE_JSON__": json.dumps(outline, ensure_ascii=False, indent=2),
+        },
+    )
+
+
+def campaign_wizard_step_prompt_es(
+    *,
+    step: int,
+    step_label: str,
+    wizard: dict,
+    rag_context: dict,
+    output_hint: dict,
+) -> str:
+    return render_prompt_template(
+        f"campaign_wizard_{step}.txt",
+        {
+            "__STEP__": str(step),
+            "__STEP_LABEL__": step_label,
+            "__WIZARD_JSON__": json.dumps(wizard, ensure_ascii=False, indent=2),
+            "__RAG_CONTEXT_JSON__": json.dumps(rag_context, ensure_ascii=False, indent=2),
+            "__OUTPUT_HINT_JSON__": json.dumps(output_hint, ensure_ascii=False, indent=2),
+        },
+    )
+
+
+def campaign_story_markdown_system_rules_es() -> str:
+    return render_prompt_template("core_markdown_system_rules.txt", {})
+
+
+def campaign_story_draft_prompt_es(
+    *,
+    world_name: str,
+    world_content: str,
+    brief: dict,
+    rag_context: dict,
+) -> str:
+    return render_prompt_template(
+        "campaign_story_draft.txt",
+        {
+            "__WORLD_NAME__": world_name,
+            "__WORLD_CONTENT__": world_content,
+            "__BRIEF_JSON__": json.dumps(brief, ensure_ascii=False, indent=2),
+            "__RAG_CONTEXT_JSON__": json.dumps(rag_context, ensure_ascii=False, indent=2),
         },
     )
 

@@ -80,6 +80,20 @@ class CampaignBrief(BaseModel):
     constraints: dict | None = None
 
 
+class CampaignWizardDraft(BaseModel):
+    kind: str = Field(default="")
+    tone: str | None = None
+    themes: list[str] = Field(default_factory=list, max_length=20)
+    starting_level: int | None = Field(default=None, ge=1, le=20)
+    inspirations: list[str] = Field(default_factory=list, max_length=20)
+    constraints: dict | None = None
+
+
+class CampaignWizardAutogenerateRequest(BaseModel):
+    step: int = Field(ge=0, le=3)
+    wizard: CampaignWizardDraft
+
+
 class CampaignCreate(BaseModel):
     name: str = Field(min_length=1)
     system: str = Field(default="5e", min_length=1, max_length=50)
@@ -109,6 +123,8 @@ class CampaignOut(BaseModel):
     brief_draft: dict | None
     brief_final: dict | None
     brief_status: str
+    story_draft: str | None
+    story_final: str | None
     outline_draft: str | None
     outline_final: str | None
     outline_status: str
@@ -118,30 +134,9 @@ class CampaignOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ArcCreate(BaseModel):
-    title: str = Field(min_length=1)
-    summary: str | None = None
-    order_index: int = 0
-
-
-class ArcUpdate(BaseModel):
-    title: str | None = Field(default=None, min_length=1)
-    summary: str | None = None
-    order_index: int | None = None
-    approval_status: str | None = Field(default=None, min_length=1, max_length=20)
-
-
-class ArcOut(BaseModel):
-    id: UUID
-    campaign_id: UUID
-    title: str
-    summary: str | None
-    order_index: int
-    approval_status: str
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
+class CampaignStoryUpdate(BaseModel):
+    # Permite vaciar el resumen si se manda `null`.
+    story_draft: str | None = None
 
 
 class SessionCreate(BaseModel):
@@ -166,7 +161,6 @@ class SessionUpdate(BaseModel):
 class SessionOut(BaseModel):
     id: UUID
     campaign_id: UUID
-    arc_id: UUID
     session_number: int
     title: str
     summary: str | None

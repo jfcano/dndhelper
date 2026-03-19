@@ -58,34 +58,14 @@ class Campaign(Base):
     brief_final: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     brief_status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft")
 
+    # Texto narrativo generado a partir del wizard (RAG+LLM).
+    # Se genera al guardar el brief y se valida/aprueba en un segundo paso.
+    story_draft: Mapped[str | None] = mapped_column(Text, nullable=True)
+    story_final: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     outline_draft: Mapped[str | None] = mapped_column(Text, nullable=True)
     outline_final: Mapped[str | None] = mapped_column(Text, nullable=True)
     outline_status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft")
-
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
-
-
-class Arc(Base):
-    __tablename__ = "arcs"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    campaign_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("campaigns.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    title: Mapped[str] = mapped_column(Text, nullable=False)
-    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    approval_status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -103,12 +83,6 @@ class Session(Base):
     campaign_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("campaigns.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    arc_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("arcs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

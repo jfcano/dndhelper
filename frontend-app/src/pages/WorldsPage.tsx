@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { World, WorldGenerate } from '../lib/api'
 import { formatError } from '../lib/errors'
+import { toSpanishStatus } from '../lib/statusLabels'
 
 const WORLD_WIZARD_STORAGE_KEY = 'dndhelper.worldWizard.v1'
 const WORLD_WIZARD_STEP_STORAGE_KEY = 'dndhelper.worldWizard.step.v1'
@@ -181,7 +182,7 @@ export function WorldsPage() {
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <h2 style={{ margin: 0 }}>Worlds</h2>
+        <h2 style={{ margin: 0 }}>Mundos</h2>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => void reload()}>Recargar</button>
           <button onClick={() => void onCreate()} disabled={creating}>
@@ -194,7 +195,7 @@ export function WorldsPage() {
       {!items && !error && <div>Cargando…</div>}
 
       <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
-        <h3 style={{ marginTop: 0 }}>Wizard de creación de world</h3>
+        <h3 style={{ marginTop: 0 }}>Asistente de creación de mundo</h3>
         <div style={{ opacity: 0.8, fontSize: 13 }}>Paso {step + 1} de 4</div>
 
         {step === 0 && (
@@ -442,7 +443,7 @@ export function WorldsPage() {
               Anterior
             </button>
             <button onClick={onResetWizard} disabled={generating}>
-              Reiniciar wizard
+              Reiniciar asistente
             </button>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -476,7 +477,7 @@ export function WorldsPage() {
                   <td style={{ padding: 10 }}>
                     <Link to={`/worlds/${w.id}`}>{w.name}</Link>
                   </td>
-                  <td style={{ padding: 10 }}>{w.status}</td>
+                  <td style={{ padding: 10 }}>{toSpanishStatus(w.status)}</td>
                   <td style={{ padding: 10 }}>
                     <small style={{ opacity: 0.8 }}>{w.updated_at}</small>
                   </td>

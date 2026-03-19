@@ -12,7 +12,7 @@ todos:
     content: Definir modelo y persistencia mínima para campañas y sesiones, con endpoints CRUD básicos.
     status: pending
   - id: fase-4-planning-narrativo
-    content: Añadir funciones y endpoints para generar arcos y sesiones de campaña usando IA y el contenido del PDF.
+    content: Añadir funciones y endpoints para generar la estructura y sesiones de campaña usando IA y el contenido del PDF.
     status: pending
   - id: fase-5-guiones-detallados
     content: Extender la IA para generar guiones detallados de sesión, NPCs y localizaciones, y mostrarlos en la UI.
@@ -42,7 +42,7 @@ isProject: false
 Construir una aplicación web que ayude a un máster de Dungeons & Dragons a:
 
 - **Consultar reglas y lore** desde PDFs y otras fuentes mediante RAG.
-- **Diseñar campañas largas** (tramas, arcos, sesiones) con apoyo de IA.
+- **Diseñar campañas largas** (tramas y sesiones) con apoyo de IA.
 - **Generar ayudas visuales** (mapas, personajes, NPCs, escenas).
 - **Adaptar las sesiones** según el progreso real de la partida.
 
@@ -135,7 +135,7 @@ Definir cómo representamos campañas largas y su progreso.
 
 - **3.1. Definir entidades iniciales**
   - `Campaign`: nombre, sistema (5e, etc.), tono, nivel inicial, objetivos generales.
-  - `Arc` (opcional para más detalle): subtramas dentro de la campaña.
+  - `Trama` (opcional para más detalle): subtramas dentro de la campaña.
   - `Session`: número de sesión, fecha prevista, estado (planificada, jugada), notas.
   - `Party`: lista breve de personajes jugadores y su nivel.
 - **3.2. Persistencia mínima**
@@ -152,24 +152,24 @@ Definir cómo representamos campañas largas y su progreso.
 
 ---
 
-## Fase 4: Generación de tramas, arcos y sesiones (planning narrativo)
+## Fase 4: Generación de tramas y sesiones (planning narrativo)
 
 Aquí empezamos con la parte creativa de IA.
 
 - **4.1. Prompting y cadenas para diseño de campaña**
   - En `[backend/app/planning.py](backend/app/planning.py)` definir funciones:
     - `generate_campaign_pitch(campaign_settings)` para generar un pitch de campaña.
-    - `generate_arcs(campaign, num_arcs)` para proponer arcos narrativos.
-    - `generate_session_outline(campaign, arc, session_number)` para un esquema de sesión.
+    - `generate_campaign_outline(campaign)` para proponer una estructura narrativa.
+    - `generate_session_outline(campaign, session_number)` para un esquema de sesión.
   - Estas funciones pueden usar el mismo modelo de lenguaje, con prompts estructurados.
 - **4.2. Endpoints de planificación**
-  - `POST /api/campaigns/{id}/generate_arcs`
+  - `POST /api/campaigns/{id}/outline:generate`
   - `POST /api/campaigns/{id}/sessions/plan_next`
 - **4.3. Integración con RAG**
   - Los prompts de planificación deben **inyectar extractos relevantes** del PDF (por ejemplo, secciones de monstruos o reglas específicas) para mantener coherencia con el sistema.
 - **4.4. UI básica para ver y editar planes**
   - Página para una campaña concreta:
-    - Ver arcos sugeridos.
+    - Ver estructura sugerida.
     - Ver lista de sesiones y su resumen.
     - Permitir al máster editar el texto generado (guardando cambios).
 - **Resultado de la fase**

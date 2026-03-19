@@ -138,6 +138,23 @@ def approve_world(world_id: UUID, db: Session = Depends(get_db)) -> WorldOut:
     return obj
 
 
+@router.post("/{world_id}/reopen", response_model=WorldOut)
+def reopen_world(world_id: UUID, db: Session = Depends(get_db)) -> WorldOut:
+    owner_id = get_owner_id()
+    stmt = select(World).where(World.id == world_id, World.owner_id == owner_id)
+    obj = db.execute(stmt).scalars().first()
+    if not obj:
+        raise HTTPException(status_code=404, detail="World no encontrado.")
+    # Al reabrir, usamos el contenido final como nueva base editable.
+    if obj.content_final is not None:
+        obj.content_draft = obj.content_final
+    obj.status = "draft"
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
 @router.delete("/{world_id}")
 def delete_world(world_id: UUID, db: Session = Depends(get_db)) -> dict:
     owner_id = get_owner_id()

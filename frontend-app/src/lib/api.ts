@@ -26,6 +26,8 @@ export type Campaign = {
   brief_draft: Record<string, unknown> | null
   brief_final: Record<string, unknown> | null
   brief_status: string
+  story_draft: string | null
+  story_final: string | null
   outline_draft: string | null
   outline_final: string | null
   outline_status: string
@@ -75,6 +77,14 @@ export type CampaignUpdate = {
   world_id?: UUID | null
 }
 
+export type CampaignCreate = {
+  name: string
+  system?: string
+  tone?: string | null
+  starting_level?: number | null
+  goals?: string | null
+}
+
 export type CampaignBrief = {
   kind: string
   tone?: string | null
@@ -82,6 +92,21 @@ export type CampaignBrief = {
   starting_level?: number | null
   inspirations?: string[]
   constraints?: Record<string, unknown> | null
+}
+
+export type CampaignWizardDraft = {
+  kind: string
+  tone: string | null
+  themes: string[]
+  starting_level: number | null
+  inspirations: string[]
+  constraints: Record<string, unknown> | null
+}
+
+export type CampaignWizardAutogenerateRequest = { step: 0 | 1 | 2 | 3; wizard: CampaignWizardDraft }
+export type CampaignWizardAutogenerateResponse = {
+  step: number
+  patch: Partial<CampaignWizardDraft>
 }
 
 export class ApiError extends Error {
@@ -125,14 +150,32 @@ export const api = {
   // Campaigns
   listCampaigns: (limit = 50, offset = 0) =>
     request<Campaign[]>(`/api/campaigns?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`),
+  createCampaign: (payload: CampaignCreate) => request<Campaign>(`/api/campaigns`, { method: 'POST', body: JSON.stringify(payload) }),
   getCampaign: (id: UUID) => request<Campaign>(`/api/campaigns/${id}`),
   patchCampaign: (id: UUID, payload: CampaignUpdate) =>
     request<Campaign>(`/api/campaigns/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   setBrief: (id: UUID, payload: CampaignBrief) =>
     request<Campaign>(`/api/campaigns/${id}/brief`, { method: 'POST', body: JSON.stringify(payload) }),
+  autogenerateCampaignWizardStep: (payload: CampaignWizardAutogenerateRequest) =>
+    request<CampaignWizardAutogenerateResponse>(`/api/campaigns:wizard/autogenerate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   approveBrief: (id: UUID) => request<Campaign>(`/api/campaigns/${id}/brief/approve`, { method: 'POST', body: '{}' }),
+  reopenCampaign: (id: UUID) => request<Campaign>(`/api/campaigns/${id}/reopen`, { method: 'POST', body: '{}' }),
+  patchCampaignStoryDraft: (id: UUID, story_draft: string) =>
+    request<Campaign>(`/api/campaigns/${id}/story`, {
+      method: 'PATCH',
+      body: JSON.stringify({ story_draft }),
+    }),
+  resetCampaignStoryDraft: (id: UUID) =>
+    request<Campaign>(`/api/campaigns/${id}/story/reset`, {
+      method: 'POST',
+      body: '{}',
+    }),
   generateWorldForCampaign: (id: UUID) =>
     request<Campaign>(`/api/campaigns/${id}/world:generate`, { method: 'POST', body: '{}' }),
+  deleteCampaign: (id: UUID) => request<{ ok: boolean }>(`/api/campaigns/${id}`, { method: 'DELETE' }),
 
   // Worlds
   listWorlds: (limit = 50, offset = 0) =>
@@ -150,6 +193,7 @@ export const api = {
   patchWorld: (id: UUID, payload: WorldUpdate) =>
     request<World>(`/api/worlds/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   approveWorld: (id: UUID) => request<World>(`/api/worlds/${id}/approve`, { method: 'POST', body: '{}' }),
+  reopenWorld: (id: UUID) => request<World>(`/api/worlds/${id}/reopen`, { method: 'POST', body: '{}' }),
   deleteWorld: (id: UUID) => request<{ ok: boolean }>(`/api/worlds/${id}`, { method: 'DELETE' }),
 }
 

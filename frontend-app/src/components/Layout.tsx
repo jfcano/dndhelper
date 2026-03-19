@@ -8,10 +8,10 @@ export function Layout() {
         <div className="brand">dndhelper</div>
         <nav className="nav">
           <NavLink to="/campaigns" className={({ isActive }) => (isActive ? 'active' : undefined)}>
-            Campaigns
+            Campañas
           </NavLink>
           <NavLink to="/worlds" className={({ isActive }) => (isActive ? 'active' : undefined)}>
-            Worlds
+            Mundos
           </NavLink>
         </nav>
       </header>
