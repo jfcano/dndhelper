@@ -52,6 +52,7 @@ export type Session = {
 }
 
 export type PlayerProfile = {
+  id?: string
   name: string
   summary: string
   basic_sheet?: Record<string, unknown> | string | null
@@ -229,6 +230,10 @@ export const api = {
       `/api/campaigns/${campaignId}/players:generate?player_count=${encodeURIComponent(playerCount)}`,
       { method: 'POST', body: '{}' },
     ),
+  listPlayersForCampaign: (campaignId: UUID) =>
+    request<PlayerProfile[]>(`/api/campaigns/${campaignId}/players`),
+  deletePlayerForCampaign: (campaignId: UUID, playerId: string) =>
+    request<PlayerProfile[]>(`/api/campaigns/${campaignId}/players/${encodeURIComponent(playerId)}`, { method: 'DELETE' }),
 
   // Worlds
   listWorlds: (limit = 50, offset = 0) =>

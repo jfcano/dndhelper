@@ -15,15 +15,20 @@ Salida requerida (JSON):
       "name": "Nombre del PJ",
       "summary": "Resumen breve del concepto del personaje.",
       "basic_sheet": {
-        "class": "Clase",
-        "subclass": "Subclase opcional",
-        "species": "Especie",
-        "background": "Trasfondo",
-        "alignment_hint": "Tendencia sugerida",
-        "level": 1,
-        "hooks": ["Gancho 1", "Gancho 2"],
-        "party_role": "Rol dentro del grupo"
+        "clase": "Clase",
+        "subclase": "Subclase opcional",
+        "especie": "Especie",
+        "trasfondo": "Trasfondo",
+        "tendencia_sugerida": "Tendencia sugerida",
+        "nivel": 1,
+        "ganchos": ["Gancho 1", "Gancho 2"],
+        "rol_en_grupo": "Rol dentro del grupo"
       }
     }
   ]
 }
+
+REQUISITOS DE IDIOMA (OBLIGATORIO):
+- TODO el contenido debe estar en español.
+- Las claves de `basic_sheet` deben ir en español (como en el ejemplo).
+- No uses claves en inglés como `class`, `species`, `background`, `party_role`, etc.

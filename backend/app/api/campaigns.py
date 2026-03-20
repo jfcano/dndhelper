@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -25,6 +25,31 @@ from backend.app.services import generation_service
 from sqlalchemy import func, select
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
+
+_PLAYERS_KEY = "__generated_players__"
+
+
+def _get_persisted_players(campaign: Campaign) -> list[dict]:
+    sources = [campaign.brief_draft, campaign.brief_final]
+    for src in sources:
+        if not isinstance(src, dict):
+            continue
+        players = src.get(_PLAYERS_KEY)
+        if isinstance(players, list):
+            return [p for p in players if isinstance(p, dict)]
+    return []
+
+
+def _set_persisted_players(campaign: Campaign, players: list[dict]) -> None:
+    # Persistimos en brief_draft y, si existe, también en brief_final para campañas aprobadas.
+    draft = dict(campaign.brief_draft) if isinstance(campaign.brief_draft, dict) else {}
+    draft[_PLAYERS_KEY] = players
+    campaign.brief_draft = draft
+
+    if isinstance(campaign.brief_final, dict):
+        final = dict(campaign.brief_final)
+        final[_PLAYERS_KEY] = players
+        campaign.brief_final = final
 
 
 @router.post("", response_model=CampaignOut)
@@ -394,10 +419,50 @@ def generate_players_for_campaign(
     if campaign.brief_status != "approved" or not campaign.brief_final:
         raise HTTPException(status_code=400, detail="El brief debe estar aprobado antes de generar jugadores.")
 
-    return generation_service.generate_player_characters(
+    generated = generation_service.generate_player_characters(
         brief=campaign.brief_final,
         player_count=max(1, min(player_count, 8)),
     )
+    persisted = [
+        {
+            "id": str(uuid4()),
+            "name": str(p.get("name") or "").strip() or "Jugador",
+            "summary": str(p.get("summary") or "").strip(),
+            "basic_sheet": p.get("basic_sheet"),
+        }
+        for p in generated
+        if isinstance(p, dict)
+    ]
+    _set_persisted_players(campaign, persisted)
+    db.add(campaign)
+    db.commit()
+    db.refresh(campaign)
+    return persisted
+
+
+@router.get("/{campaign_id}/players")
+def list_players_for_campaign(campaign_id: UUID, db: Session = Depends(get_db)) -> list[dict]:
+    owner_id = get_owner_id()
+    campaign = crud.get_campaign(db, owner_id, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign no encontrada.")
+    return _get_persisted_players(campaign)
+
+
+@router.delete("/{campaign_id}/players/{player_id}")
+def delete_player_for_campaign(campaign_id: UUID, player_id: str, db: Session = Depends(get_db)) -> list[dict]:
+    owner_id = get_owner_id()
+    campaign = crud.get_campaign(db, owner_id, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign no encontrada.")
+
+    current = _get_persisted_players(campaign)
+    updated = [p for p in current if str(p.get("id") or "") != str(player_id)]
+    _set_persisted_players(campaign, updated)
+    db.add(campaign)
+    db.commit()
+    db.refresh(campaign)
+    return updated
 
 
 @router.patch("/{campaign_id}/outline", response_model=CampaignOut)

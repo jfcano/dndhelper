@@ -498,6 +498,31 @@ def generate_sessions(
 
 
 def generate_player_characters(*, brief: dict, player_count: int) -> list[dict]:
+    def _normalize_basic_sheet_keys(value: Any) -> Any:
+        key_map = {
+            "class": "clase",
+            "subclass": "subclase",
+            "species": "especie",
+            "race": "especie",
+            "background": "trasfondo",
+            "alignment_hint": "tendencia_sugerida",
+            "alignment": "tendencia_sugerida",
+            "level": "nivel",
+            "hooks": "ganchos",
+            "party_role": "rol_en_grupo",
+            "role_in_party": "rol_en_grupo",
+        }
+        if isinstance(value, list):
+            return [_normalize_basic_sheet_keys(v) for v in value]
+        if isinstance(value, dict):
+            out: dict[str, Any] = {}
+            for k, v in value.items():
+                k_str = str(k).strip()
+                mapped = key_map.get(k_str.lower(), k_str)
+                out[mapped] = _normalize_basic_sheet_keys(v)
+            return out
+        return value
+
     llm = _get_llm()
     safe_count = max(1, min(int(player_count), 8))
     messages = [
@@ -508,7 +533,16 @@ def generate_player_characters(*, brief: dict, player_count: int) -> list[dict]:
     players = raw.get("players")
     if not isinstance(players, list):
         raise ValueError("Salida invalida: falta 'players' como lista.")
-    return [p for p in players if isinstance(p, dict)]
+    normalized: list[dict] = []
+    for p in players:
+        if not isinstance(p, dict):
+            continue
+        out = dict(p)
+        out["name"] = str(p.get("name") or "").strip() or "Jugador"
+        out["summary"] = str(p.get("summary") or "").strip()
+        out["basic_sheet"] = _normalize_basic_sheet_keys(p.get("basic_sheet"))
+        normalized.append(out)
+    return normalized
 
 
 def extend_session_markdown(

@@ -156,13 +156,77 @@ function formatPlannedDate(notes: string | null): string {
   return firstNonEmptyLine(notes) ?? ''
 }
 
-function stringifyMaybeJson(value: unknown): string {
-  if (typeof value === 'string') return value
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
+function formatSheetLabel(rawKey: string): string {
+  return rawKey
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .trim()
+    .replace(/^\w/, (c) => c.toUpperCase())
+}
+
+function formatSheetScalar(value: unknown): string {
+  if (value == null) return '(vacío)'
+  if (typeof value === 'boolean') return value ? 'Sí' : 'No'
+  return String(value)
+}
+
+function renderStructuredSheet(value: unknown, level = 0): ReactNode {
+  if (value == null) return <span style={{ opacity: 0.75 }}>(vacío)</span>
+
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return <span>{String(value)}</span>
   }
+
+  if (Array.isArray(value)) {
+    if (!value.length) return <span style={{ opacity: 0.75 }}>(sin elementos)</span>
+    return (
+      <ul style={{ margin: 0, paddingLeft: level === 0 ? 18 : 16, display: 'grid', gap: 4 }}>
+        {value.map((item, idx) => (
+          <li key={`sheet-list-${level}-${idx}`}>{renderStructuredSheet(item, level + 1)}</li>
+        ))}
+      </ul>
+    )
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+    if (!entries.length) return <span style={{ opacity: 0.75 }}>(sin contenido)</span>
+    const scalarEntries = entries.filter(([, v]) => v == null || ['string', 'number', 'boolean'].includes(typeof v))
+    const complexEntries = entries.filter(([, v]) => !(v == null || ['string', 'number', 'boolean'].includes(typeof v)))
+
+    return (
+      <div style={{ display: 'grid', gap: 8, textAlign: 'left' }}>
+        {scalarEntries.length > 0 && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(140px, 220px) 1fr',
+              gap: 8,
+              alignItems: 'start',
+            }}
+          >
+            {scalarEntries.map(([k, v]) => (
+              <div key={`sheet-scalar-row-${level}-${k}`} style={{ display: 'contents' }}>
+                <div style={{ opacity: 0.85, fontWeight: 650 }}>
+                  {formatSheetLabel(k)}
+                </div>
+                <div>{formatSheetScalar(v)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {complexEntries.map(([k, v]) => (
+          <div key={`sheet-key-${level}-${k}`} style={{ marginLeft: level > 0 ? 8 : 0 }}>
+            <div style={{ fontWeight: 700, marginTop: scalarEntries.length > 0 ? 2 : 0 }}>{formatSheetLabel(k)}</div>
+            <div style={{ marginLeft: 10, marginTop: 4 }}>{renderStructuredSheet(v, level + 1)}</div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  return <span>{String(value)}</span>
 }
 
 function createEmptyCampaignWizard(): CampaignWizardDraft {
@@ -341,6 +405,38 @@ export function CampaignDetailPage() {
   const selectedPlayer = selectedPlayerIndex >= 0 ? derivedPlayers[selectedPlayerIndex] : null
 
   useEffect(() => {
+    if (!campaign) return
+    if (detailTab !== 'jugadores') return
+    let alive = true
+    setPlayersLoading(true)
+    setPlayersError(null)
+    api
+      .listPlayersForCampaign(campaign.id)
+      .then((list) => {
+        if (!alive) return
+        const normalized = list.map((p: PlayerProfile, idx) => ({
+          id: String(p.id ?? idx),
+          name: String(p.name ?? `Jugador ${idx + 1}`),
+          summary: String(p.summary ?? ''),
+          basicSheet: p.basic_sheet ?? null,
+        }))
+        setPlayers(normalized)
+        setSelectedPlayerIndex(0)
+      })
+      .catch((e) => {
+        if (!alive) return
+        setPlayersError(formatError(e))
+      })
+      .finally(() => {
+        if (!alive) return
+        setPlayersLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [campaign, detailTab])
+
+  useEffect(() => {
     setSessionDraftEditor(selectedSession?.content_draft ?? '')
   }, [selectedSession?.id, selectedSession?.content_draft])
 
@@ -424,7 +520,7 @@ export function CampaignDetailPage() {
     try {
       const generated = await api.generatePlayersForCampaign(campaign.id, count)
       const normalized = generated.map((p: PlayerProfile, idx) => ({
-        id: String(idx),
+        id: String(p.id ?? idx),
         name: String(p.name ?? `Jugador ${idx + 1}`),
         summary: String(p.summary ?? ''),
         basicSheet: p.basic_sheet ?? null,
@@ -436,6 +532,24 @@ export function CampaignDetailPage() {
       setPlayersError(formatError(e))
     } finally {
       setPlayersLoading(false)
+    }
+  }
+
+  async function onDeleteGeneratedPlayer(playerId: string) {
+    if (!campaign) return
+    setPlayersError(null)
+    try {
+      const updated = await api.deletePlayerForCampaign(campaign.id, playerId)
+      const normalized = updated.map((p: PlayerProfile, idx) => ({
+        id: String(p.id ?? idx),
+        name: String(p.name ?? `Jugador ${idx + 1}`),
+        summary: String(p.summary ?? ''),
+        basicSheet: p.basic_sheet ?? null,
+      }))
+      setPlayers(normalized)
+      setSelectedPlayerIndex((prev) => Math.min(prev, Math.max(normalized.length - 1, 0)))
+    } catch (e) {
+      setPlayersError(formatError(e))
     }
   }
 
@@ -791,7 +905,7 @@ export function CampaignDetailPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
           <button onClick={() => navigate(-1)}>←</button>
-          <h2 style={{ margin: 0 }}>Campaña</h2>
+          <h2 style={{ margin: 0, fontSize: 30, textAlign: 'left' }}>Campaña</h2>
         </div>
         {campaign && <code>{campaign.id}</code>}
       </div>
@@ -803,7 +917,7 @@ export function CampaignDetailPage() {
       {campaign && (
         <>
           <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 2fr) minmax(140px, 1fr) minmax(140px, 1fr)', gap: 12, alignItems: 'start' }}>
               <div>
                 <div style={{ opacity: 0.75, fontSize: 12 }}>Nombre</div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
@@ -848,7 +962,7 @@ export function CampaignDetailPage() {
           {campaign.brief_status !== 'approved' && !campaign.story_draft && (
             <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <h3 style={{ margin: 0 }}>Asistente de resumen inicial</h3>
+              <h3 style={{ margin: 0, fontSize: 24, textAlign: 'left' }}>Asistente de resumen inicial</h3>
               <div style={{ display: 'flex', gap: 8 }}>
                 <small style={{ opacity: 0.8 }}>Paso {stepPos} de {visibleSteps.length}</small>
               </div>
@@ -1045,14 +1159,59 @@ export function CampaignDetailPage() {
 
           {(campaign.brief_status === 'approved' || !!campaign.story_draft) && (
             <>
-              <div style={{ display: 'flex', gap: 8, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 8 }}>
-                <button onClick={() => setDetailTab('historia')} disabled={detailTab === 'historia'}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 6,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  borderRadius: 12,
+                  padding: 6,
+                  background: 'rgba(255,255,255,0.03)',
+                }}
+              >
+                <button
+                  onClick={() => setDetailTab('historia')}
+                  disabled={detailTab === 'historia'}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: 10,
+                    border: detailTab === 'historia' ? '1px solid rgba(255,255,255,0.35)' : '1px solid transparent',
+                    background: detailTab === 'historia' ? 'rgba(255,255,255,0.16)' : 'transparent',
+                    fontSize: 15,
+                    fontWeight: 650,
+                    cursor: detailTab === 'historia' ? 'default' : 'pointer',
+                  }}
+                >
                   Historia
                 </button>
-                <button onClick={() => setDetailTab('sesiones')} disabled={detailTab === 'sesiones'}>
+                <button
+                  onClick={() => setDetailTab('sesiones')}
+                  disabled={detailTab === 'sesiones'}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: 10,
+                    border: detailTab === 'sesiones' ? '1px solid rgba(255,255,255,0.35)' : '1px solid transparent',
+                    background: detailTab === 'sesiones' ? 'rgba(255,255,255,0.16)' : 'transparent',
+                    fontSize: 15,
+                    fontWeight: 650,
+                    cursor: detailTab === 'sesiones' ? 'default' : 'pointer',
+                  }}
+                >
                   Sesiones
                 </button>
-                <button onClick={() => setDetailTab('jugadores')} disabled={detailTab === 'jugadores'}>
+                <button
+                  onClick={() => setDetailTab('jugadores')}
+                  disabled={detailTab === 'jugadores'}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: 10,
+                    border: detailTab === 'jugadores' ? '1px solid rgba(255,255,255,0.35)' : '1px solid transparent',
+                    background: detailTab === 'jugadores' ? 'rgba(255,255,255,0.16)' : 'transparent',
+                    fontSize: 15,
+                    fontWeight: 650,
+                    cursor: detailTab === 'jugadores' ? 'default' : 'pointer',
+                  }}
+                >
                   Jugadores
                 </button>
               </div>
@@ -1064,7 +1223,7 @@ export function CampaignDetailPage() {
                   {campaign.story_draft && (
                     <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                        <h3 style={{ margin: 0 }}>Borrador del resumen de historia</h3>
+                        <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>Borrador del resumen de historia</h3>
                         <div style={{ display: 'flex', gap: 8 }}>
                           <button
                             onClick={() => void onSaveStoryDraft()}
@@ -1106,7 +1265,7 @@ export function CampaignDetailPage() {
               ) : (
                 <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                    <h3 style={{ margin: 0 }}>Resumen final de historia</h3>
+                    <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>Resumen final de historia</h3>
                     <button onClick={() => void onReopenCampaign()} disabled={reopening}>
                       {reopening ? 'Reabriendo…' : 'Volver a borrador'}
                     </button>
@@ -1120,7 +1279,7 @@ export function CampaignDetailPage() {
               {detailTab === 'sesiones' && (
                 <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                <h3 style={{ marginTop: 0 }}>Sesiones vinculadas</h3>
+                <h3 style={{ marginTop: 0, fontSize: 24, textAlign: 'left' }}>Sesiones vinculadas</h3>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <button
                     onClick={() => {
@@ -1228,7 +1387,7 @@ export function CampaignDetailPage() {
                   {selectedSession ? (
                     <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                        <h3 style={{ margin: 0 }}>
+                        <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>
                           Sesión {selectedSession.session_number}: {selectedSession.title}
                         </h3>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1241,12 +1400,6 @@ export function CampaignDetailPage() {
                         </div>
                       </div>
                       <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
-                        <div>
-                          <div style={{ opacity: 0.75, fontSize: 12 }}>Resumen</div>
-                          <div>
-                            {selectedSession.summary ? renderMarkdownLite(selectedSession.summary) : <span style={{ opacity: 0.75 }}>(vacío)</span>}
-                          </div>
-                        </div>
                         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                           <div>
                             <div style={{ opacity: 0.75, fontSize: 12 }}>Estado</div>
@@ -1292,6 +1445,12 @@ export function CampaignDetailPage() {
                           </div>
                         </div>
                         <div>
+                          <div style={{ opacity: 0.75, fontSize: 12 }}>Resumen</div>
+                          <div>
+                            {selectedSession.summary ? renderMarkdownLite(selectedSession.summary) : <span style={{ opacity: 0.75 }}>(vacío)</span>}
+                          </div>
+                        </div>
+                        <div>
                           <div style={{ opacity: 0.75, fontSize: 12 }}>Notas</div>
                           <div style={{ whiteSpace: 'pre-wrap' }}>
                             {selectedSession.notes ?? <span style={{ opacity: 0.75 }}>(vacío)</span>}
@@ -1329,7 +1488,7 @@ export function CampaignDetailPage() {
               {detailTab === 'jugadores' && (
                 <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                <h3 style={{ marginTop: 0 }}>Personajes jugadores</h3>
+                <h3 style={{ marginTop: 0, fontSize: 24, textAlign: 'left' }}>Personajes jugadores</h3>
                 <button
                   onClick={() => {
                     setPlayersError(null)
@@ -1388,7 +1547,7 @@ export function CampaignDetailPage() {
                         <tr>
                           <th style={{ textAlign: 'left', padding: 10 }}>Jugador</th>
                           <th style={{ textAlign: 'left', padding: 10 }}>Resumen</th>
-                          <th style={{ textAlign: 'left', padding: 10 }}>Ficha básica</th>
+                          <th style={{ textAlign: 'left', padding: 10 }}>Acciones</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1398,19 +1557,23 @@ export function CampaignDetailPage() {
                             style={{
                               borderTop: '1px solid rgba(255,255,255,0.08)',
                               background: selectedPlayerIndex === idx ? 'rgba(255,255,255,0.04)' : undefined,
+                              cursor: 'pointer',
                             }}
+                            onClick={() => setSelectedPlayerIndex(idx)}
                           >
                             <td style={{ padding: 10 }}>
-                              <button onClick={() => setSelectedPlayerIndex(idx)} disabled={selectedPlayerIndex === idx}>
-                                {p.name}
-                              </button>
+                              {p.name}
                             </td>
                             <td style={{ padding: 10 }}>{p.summary || <span style={{ opacity: 0.75 }}>(vacío)</span>}</td>
-                            <td style={{ padding: 10, maxWidth: 320 }}>
-                              <code style={{ fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                {stringifyMaybeJson(p.basicSheet).slice(0, 140)}
-                                {stringifyMaybeJson(p.basicSheet).length > 140 ? '…' : ''}
-                              </code>
+                            <td style={{ padding: 10 }}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onDeleteGeneratedPlayer(p.id)
+                                }}
+                              >
+                                Borrar
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -1421,7 +1584,7 @@ export function CampaignDetailPage() {
                   {selectedPlayer ? (
                     <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                        <h3 style={{ margin: 0 }}>{selectedPlayer.name}</h3>
+                        <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>{selectedPlayer.name}</h3>
                         <div style={{ opacity: 0.75, fontSize: 12 }}>Vista de detalle</div>
                       </div>
                       <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
@@ -1431,9 +1594,20 @@ export function CampaignDetailPage() {
                         </div>
                         <div>
                           <div style={{ opacity: 0.75, fontSize: 12 }}>Ficha básica</div>
-                          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12 }}>
-                            {stringifyMaybeJson(selectedPlayer.basicSheet)}
-                          </pre>
+                          <div
+                            style={{
+                              marginTop: 6,
+                              border: '1px solid rgba(255,255,255,0.12)',
+                              borderRadius: 10,
+                              padding: 10,
+                              background: 'rgba(255,255,255,0.02)',
+                              fontSize: 14,
+                              lineHeight: 1.45,
+                              textAlign: 'left',
+                            }}
+                          >
+                            {renderStructuredSheet(selectedPlayer.basicSheet)}
+                          </div>
                         </div>
                       </div>
                     </div>
