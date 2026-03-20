@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../lib/api'
-import type { Campaign, CampaignBrief, CampaignWizardDraft, World } from '../lib/api'
+import type { Campaign, CampaignBrief, CampaignWizardDraft, PlayerProfile, Session, World } from '../lib/api'
 import { formatError } from '../lib/errors'
 import { toSpanishStatus } from '../lib/statusLabels'
 
@@ -137,6 +137,34 @@ function renderMarkdownLite(md: string): ReactNode {
   )
 }
 
+type PlayerDerived = {
+  id: string
+  name: string
+  summary: string
+  basicSheet: unknown
+}
+
+function firstNonEmptyLine(text: string | null | undefined): string | null {
+  const raw = (text ?? '').trim()
+  if (!raw) return null
+  const lines = raw.split('\n').map((l) => l.trim())
+  return lines.find((l) => l.length > 0) ?? null
+}
+
+function formatPlannedDate(notes: string | null): string {
+  // Si no hay fecha explícita en `notes`, dejamos la celda vacía.
+  return firstNonEmptyLine(notes) ?? ''
+}
+
+function stringifyMaybeJson(value: unknown): string {
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
 function createEmptyCampaignWizard(): CampaignWizardDraft {
   return {
     kind: '',
@@ -177,10 +205,36 @@ export function CampaignDetailPage() {
   const [autogeneratingStep, setAutogeneratingStep] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [reopening, setReopening] = useState(false)
+  const [nameSaving, setNameSaving] = useState(false)
   const [storyEditorText, setStoryEditorText] = useState('')
   const [storySaving, setStorySaving] = useState(false)
+  const [campaignNameEditor, setCampaignNameEditor] = useState('')
+  const [campaignNameDirty, setCampaignNameDirty] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
+
+  const [detailTab, setDetailTab] = useState<'historia' | 'sesiones' | 'jugadores'>('historia')
+  const [sessions, setSessions] = useState<Session[] | null>(null)
+  const [sessionsLoading, setSessionsLoading] = useState(false)
+  const [sessionsError, setSessionsError] = useState<string | null>(null)
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
+
+  const [createSessionsOpen, setCreateSessionsOpen] = useState(false)
+  const [createSessionsCount, setCreateSessionsCount] = useState(3)
+  const [createSessionsLoading, setCreateSessionsLoading] = useState(false)
+  const [createSessionsError, setCreateSessionsError] = useState<string | null>(null)
+  const [sessionDraftEditor, setSessionDraftEditor] = useState('')
+  const [sessionDraftSaving, setSessionDraftSaving] = useState(false)
+  const [sessionDeleteLoadingId, setSessionDeleteLoadingId] = useState<string | null>(null)
+  const [sessionExtending, setSessionExtending] = useState(false)
+
+  const [players, setPlayers] = useState<PlayerDerived[]>([])
+  const [playersLoading, setPlayersLoading] = useState(false)
+  const [playersError, setPlayersError] = useState<string | null>(null)
+  const [createPlayersOpen, setCreatePlayersOpen] = useState(false)
+  const [createPlayersCount, setCreatePlayersCount] = useState(4)
+
+  const [selectedPlayerIndex, setSelectedPlayerIndex] = useState(0)
 
   useEffect(() => {
     if (!id) return
@@ -189,6 +243,8 @@ export function CampaignDetailPage() {
       .then(([c, ws]) => {
         if (!alive) return
         setCampaign(c)
+        setCampaignNameEditor(c.name ?? '')
+        setCampaignNameDirty(false)
         setWorlds(ws)
         setWorldId(c.world_id ?? '')
 
@@ -218,6 +274,170 @@ export function CampaignDetailPage() {
       alive = false
     }
   }, [id])
+
+  useEffect(() => {
+    // Al cambiar de campaña, reseteamos selección y caché de sesiones.
+    setSessions(null)
+    setSessionsError(null)
+    setSelectedSessionId(null)
+    setSessionsLoading(false)
+    setPlayers([])
+    setPlayersError(null)
+    setPlayersLoading(false)
+    setCreatePlayersOpen(false)
+    setCreatePlayersCount(4)
+    setSelectedPlayerIndex(0)
+    setDetailTab('historia')
+  }, [campaign?.id])
+
+  useEffect(() => {
+    if (!campaign) return
+    if (detailTab !== 'sesiones') return
+    if (sessions !== null) return // ya cargadas
+
+    let alive = true
+    setSessionsLoading(true)
+    setSessionsError(null)
+    api
+      .listSessionsForCampaign(campaign.id)
+      .then((list) => {
+        if (!alive) return
+        const sorted = [...list].sort((a, b) => a.session_number - b.session_number)
+        setSessions(sorted)
+        setSelectedSessionId((prev) => {
+          if (prev && sorted.some((s) => s.id === prev)) return prev
+          return sorted[0]?.id ? String(sorted[0].id) : null
+        })
+      })
+      .catch((e) => {
+        if (!alive) return
+        setSessionsError(formatError(e))
+      })
+      .finally(() => {
+        if (!alive) return
+        setSessionsLoading(false)
+      })
+
+    return () => {
+      alive = false
+    }
+  }, [campaign, detailTab, sessions])
+
+  const derivedPlayers = useMemo(() => players, [players])
+
+  useEffect(() => {
+    if (!derivedPlayers.length) {
+      if (selectedPlayerIndex !== 0) setSelectedPlayerIndex(0)
+      return
+    }
+    if (selectedPlayerIndex < 0 || selectedPlayerIndex >= derivedPlayers.length) setSelectedPlayerIndex(0)
+  }, [derivedPlayers.length, selectedPlayerIndex])
+
+  const selectedSession = useMemo(() => {
+    if (!sessions || !selectedSessionId) return null
+    return sessions.find((s) => s.id === selectedSessionId) ?? null
+  }, [sessions, selectedSessionId])
+
+  const selectedPlayer = selectedPlayerIndex >= 0 ? derivedPlayers[selectedPlayerIndex] : null
+
+  useEffect(() => {
+    setSessionDraftEditor(selectedSession?.content_draft ?? '')
+  }, [selectedSession?.id, selectedSession?.content_draft])
+
+  async function onCreateAndGenerateSessions() {
+    if (!campaign) return
+    const count = Math.max(1, Math.min(Number(createSessionsCount) || 1, 20))
+    setCreateSessionsLoading(true)
+    setCreateSessionsError(null)
+    try {
+      const created = await api.generateSessionsForCampaign(campaign.id, count)
+      const sorted = [...created].sort((a, b) => a.session_number - b.session_number)
+      setSessions(sorted)
+      setSelectedSessionId(sorted[0]?.id ? String(sorted[0].id) : null)
+      setCreateSessionsOpen(false)
+    } catch (e) {
+      setCreateSessionsError(formatError(e))
+    } finally {
+      setCreateSessionsLoading(false)
+    }
+  }
+
+  async function onExtendSessionInfo() {
+    if (!selectedSession) return
+    setSessionExtending(true)
+    setSessionsError(null)
+    try {
+      const updated = await api.extendSession(selectedSession.id)
+      setSessions((prev) => {
+        if (!prev) return prev
+        return prev.map((item) => (item.id === updated.id ? updated : item))
+      })
+    } catch (e) {
+      setSessionsError(formatError(e))
+    } finally {
+      setSessionExtending(false)
+    }
+  }
+
+  async function onSaveSessionDraft() {
+    if (!selectedSession) return
+    setSessionDraftSaving(true)
+    setSessionsError(null)
+    try {
+      const updated = await api.patchSession(selectedSession.id, { content_draft: sessionDraftEditor })
+      setSessions((prev) => {
+        if (!prev) return prev
+        return prev.map((s) => (s.id === updated.id ? updated : s))
+      })
+    } catch (e) {
+      setSessionsError(formatError(e))
+    } finally {
+      setSessionDraftSaving(false)
+    }
+  }
+
+  async function onDeleteSession(sessionId: string) {
+    if (!campaign) return
+    setSessionDeleteLoadingId(sessionId)
+    setSessionsError(null)
+    try {
+      await api.deleteSession(sessionId)
+      const refreshed = await api.listSessionsForCampaign(campaign.id)
+      const sorted = [...refreshed].sort((a, b) => a.session_number - b.session_number)
+      setSessions(sorted)
+      setSelectedSessionId((prev) => {
+        if (prev && prev !== sessionId && sorted.some((s) => s.id === prev)) return prev
+        return sorted[0]?.id ? String(sorted[0].id) : null
+      })
+    } catch (e) {
+      setSessionsError(formatError(e))
+    } finally {
+      setSessionDeleteLoadingId(null)
+    }
+  }
+
+  async function onCreateAndGeneratePlayers() {
+    if (!campaign) return
+    const count = Math.max(1, Math.min(Number(createPlayersCount) || 1, 8))
+    setPlayersLoading(true)
+    setPlayersError(null)
+    try {
+      const generated = await api.generatePlayersForCampaign(campaign.id, count)
+      const normalized = generated.map((p: PlayerProfile, idx) => ({
+        id: String(idx),
+        name: String(p.name ?? `Jugador ${idx + 1}`),
+        summary: String(p.summary ?? ''),
+        basicSheet: p.basic_sheet ?? null,
+      }))
+      setPlayers(normalized)
+      setSelectedPlayerIndex(0)
+      setCreatePlayersOpen(false)
+    } catch (e) {
+      setPlayersError(formatError(e))
+    } finally {
+      setPlayersLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!id) return
@@ -296,6 +516,12 @@ export function CampaignDetailPage() {
     }
     setStoryEditorText(campaign.story_draft ?? '')
   }, [campaign?.brief_status, campaign?.story_draft])
+
+  useEffect(() => {
+    if (!campaign) return
+    if (campaignNameDirty) return
+    setCampaignNameEditor(campaign.name ?? '')
+  }, [campaign?.name, campaignNameDirty])
 
   // Si el usuario decide usar un mundo ya generado, saltamos los pasos que sobran
   // (tipo y tono, e inspiraciones).
@@ -535,6 +761,29 @@ export function CampaignDetailPage() {
     }
   }
 
+  async function onSaveCampaignName() {
+    if (!id || !campaign) return
+    const trimmed = campaignNameEditor.trim()
+    if (!trimmed) {
+      setError('El nombre no puede estar vacío.')
+      return
+    }
+    setNameSaving(true)
+    setError(null)
+    setOk(null)
+    try {
+      const updated = await api.patchCampaign(id, { name: trimmed })
+      setCampaign(updated)
+      setCampaignNameEditor(updated.name)
+      setCampaignNameDirty(false)
+      setOk('Nombre guardado')
+    } catch (e) {
+      setError(formatError(e))
+    } finally {
+      setNameSaving(false)
+    }
+  }
+
   if (!id) return <div>Falta id</div>
 
   return (
@@ -557,7 +806,33 @@ export function CampaignDetailPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 <div style={{ opacity: 0.75, fontSize: 12 }}>Nombre</div>
-                <div style={{ fontWeight: 650 }}>{campaign.name}</div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+                  <input
+                    value={campaignNameEditor}
+                    onChange={(e) => {
+                      setCampaignNameEditor(e.target.value)
+                      setCampaignNameDirty(true)
+                    }}
+                    style={{
+                      width: '100%',
+                      minWidth: 220,
+                      padding: 8,
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      background: 'rgba(0,0,0,0.25)',
+                      color: 'inherit',
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                      fontSize: 13,
+                    }}
+                    disabled={nameSaving || saving || storySaving}
+                  />
+                  <button
+                    onClick={() => void onSaveCampaignName()}
+                    disabled={nameSaving || saving || !campaignNameDirty || !campaignNameEditor.trim()}
+                  >
+                    {nameSaving ? 'Guardando…' : 'Guardar'}
+                  </button>
+                </div>
               </div>
               <div>
                 <div style={{ opacity: 0.75, fontSize: 12 }}>Sistema</div>
@@ -566,10 +841,6 @@ export function CampaignDetailPage() {
               <div>
                 <div style={{ opacity: 0.75, fontSize: 12 }}>Resumen inicial</div>
                 <div>{toSpanishStatus(campaign.brief_status)}</div>
-              </div>
-              <div>
-                <div style={{ opacity: 0.75, fontSize: 12 }}>Esquema</div>
-                <div>{toSpanishStatus(campaign.outline_status)}</div>
               </div>
             </div>
           </div>
@@ -772,69 +1043,408 @@ export function CampaignDetailPage() {
             </div>
           )}
 
-          {campaign.brief_status !== 'approved' ? (
+          {(campaign.brief_status === 'approved' || !!campaign.story_draft) && (
             <>
-              {campaign.story_draft && (
+              <div style={{ display: 'flex', gap: 8, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 8 }}>
+                <button onClick={() => setDetailTab('historia')} disabled={detailTab === 'historia'}>
+                  Historia
+                </button>
+                <button onClick={() => setDetailTab('sesiones')} disabled={detailTab === 'sesiones'}>
+                  Sesiones
+                </button>
+                <button onClick={() => setDetailTab('jugadores')} disabled={detailTab === 'jugadores'}>
+                  Jugadores
+                </button>
+              </div>
+
+              {detailTab === 'historia' && (
+                <>
+              {campaign.brief_status !== 'approved' ? (
+                <>
+                  {campaign.story_draft && (
+                    <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                        <h3 style={{ margin: 0 }}>Borrador del resumen de historia</h3>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            onClick={() => void onSaveStoryDraft()}
+                            disabled={storySaving || saving || !campaign.world_id || campaign.world_id !== worldId}
+                          >
+                            {storySaving ? 'Guardando…' : 'Guardar borrador'}
+                          </button>
+                          <button
+                            onClick={() => void onApproveBrief()}
+                            disabled={
+                              saving ||
+                              storySaving ||
+                              !campaign.world_id ||
+                              campaign.world_id !== worldId ||
+                              !storyEditorText.trim().length
+                            }
+                          >
+                            {saving ? 'Aprobando…' : 'Aprobar'}
+                          </button>
+                          <button onClick={() => void onResetWizard()} disabled={saving || storySaving}>
+                            Reiniciar asistente
+                          </button>
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+                        <div style={{ opacity: 0.8, fontSize: 13 }}>Vista previa (solo lectura)</div>
+                        <div>{storyPreviewRendered}</div>
+                        <textarea
+                          rows={12}
+                          value={storyEditorText}
+                          onChange={(e) => setStoryEditorText(e.target.value)}
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
                 <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                    <h3 style={{ margin: 0 }}>Borrador del resumen de historia</h3>
+                    <h3 style={{ margin: 0 }}>Resumen final de historia</h3>
+                    <button onClick={() => void onReopenCampaign()} disabled={reopening}>
+                      {reopening ? 'Reabriendo…' : 'Volver a borrador'}
+                    </button>
+                  </div>
+                  <div style={{ marginTop: 10 }}>{storyFinalRendered}</div>
+                </div>
+              )}
+                </>
+              )}
+
+              {detailTab === 'sesiones' && (
+                <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                <h3 style={{ marginTop: 0 }}>Sesiones vinculadas</h3>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button
+                    onClick={() => {
+                      setCreateSessionsError(null)
+                      setCreateSessionsOpen(true)
+                    }}
+                    disabled={
+                      createSessionsLoading ||
+                      sessionsLoading ||
+                      campaign.brief_status !== 'approved'
+                    }
+                  >
+                    {createSessionsLoading ? 'Generando…' : 'Crear y generar'}
+                  </button>
+                </div>
+              </div>
+              {sessionsError && <div style={{ color: 'salmon' }}>{sessionsError}</div>}
+              {createSessionsError && <div style={{ color: 'salmon', marginTop: 8 }}>{createSessionsError}</div>}
+              {!sessions && !sessionsError && sessionsLoading && <div>Cargando…</div>}
+              {sessions && sessions.length === 0 && <div>No hay sesiones para esta campaña.</div>}
+
+              {createSessionsOpen && (
+                <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 12 }}>
+                  <h4 style={{ margin: '0 0 8px 0' }}>Crear sesiones</h4>
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <span style={{ opacity: 0.75, fontSize: 12 }}>¿Cuántas sesiones crear? (1-20)</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={createSessionsCount}
+                        onChange={(e) => setCreateSessionsCount(Number(e.target.value))}
+                        style={{
+                          padding: 8,
+                          borderRadius: 10,
+                          border: '1px solid rgba(255,255,255,0.12)',
+                          background: 'rgba(0,0,0,0.25)',
+                          color: 'inherit',
+                          width: 140,
+                        }}
+                        disabled={createSessionsLoading}
+                      />
+                    </label>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button
-                        onClick={() => void onSaveStoryDraft()}
-                        disabled={storySaving || saving || !campaign.world_id || campaign.world_id !== worldId}
+                        onClick={() => setCreateSessionsOpen(false)}
+                        disabled={createSessionsLoading}
                       >
-                        {storySaving ? 'Guardando…' : 'Guardar borrador'}
+                        Cancelar
                       </button>
-                      <button
-                        onClick={() => void onApproveBrief()}
-                        disabled={
-                          saving ||
-                          storySaving ||
-                          !campaign.world_id ||
-                          campaign.world_id !== worldId ||
-                          !storyEditorText.trim().length
-                        }
-                      >
-                        {saving ? 'Aprobando…' : 'Aprobar'}
-                      </button>
-                      <button onClick={() => void onResetWizard()} disabled={saving || storySaving}>
-                        Reiniciar asistente
+                      <button onClick={() => void onCreateAndGenerateSessions()} disabled={createSessionsLoading}>
+                        {createSessionsLoading ? 'Creando…' : 'Crear y generar'}
                       </button>
                     </div>
-                  </div>
-
-                  <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
-                    <div style={{ opacity: 0.8, fontSize: 13 }}>Vista previa (solo lectura)</div>
-                    <div>{storyPreviewRendered}</div>
-                    <textarea
-                      rows={12}
-                      value={storyEditorText}
-                      onChange={(e) => setStoryEditorText(e.target.value)}
-                      style={{ width: '100%' }}
-                    />
                   </div>
                 </div>
               )}
 
-              <details>
-                <summary>Resumen inicial (JSON)</summary>
-                <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(campaign.brief_final ?? campaign.brief_draft, null, 2)}</pre>
-              </details>
-              <details>
-                <summary>Esquema (texto)</summary>
-                <pre style={{ whiteSpace: 'pre-wrap' }}>{campaign.outline_final ?? campaign.outline_draft}</pre>
-              </details>
-            </>
-          ) : (
-            <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 }}>
+              {sessions && sessions.length > 0 && (
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div style={{ overflow: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead style={{ background: 'rgba(255,255,255,0.04)' }}>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: 10 }}>Orden</th>
+                          <th style={{ textAlign: 'left', padding: 10 }}>Nombre</th>
+                          <th style={{ textAlign: 'left', padding: 10 }}>Fecha prevista</th>
+                          <th style={{ textAlign: 'left', padding: 10 }}>Jugada</th>
+                          <th style={{ textAlign: 'left', padding: 10 }}>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sessions.map((s) => (
+                          <tr
+                            key={s.id}
+                            onClick={() => setSelectedSessionId(s.id)}
+                            style={{
+                              borderTop: '1px solid rgba(255,255,255,0.08)',
+                              background: selectedSessionId === s.id ? 'rgba(255,255,255,0.04)' : undefined,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <td style={{ padding: 10 }}>{s.session_number}</td>
+                            <td style={{ padding: 10 }}>{s.title}</td>
+                            <td style={{ padding: 10 }}>{formatPlannedDate(s.notes)}</td>
+                            <td style={{ padding: 10 }}>{s.played ? 'Sí' : 'No'}</td>
+                            <td style={{ padding: 10 }}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void onDeleteSession(s.id)
+                                }}
+                                disabled={sessionDeleteLoadingId === s.id || createSessionsLoading}
+                              >
+                                {sessionDeleteLoadingId === s.id ? 'Borrando…' : 'Borrar'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {selectedSession ? (
+                    <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                        <h3 style={{ margin: 0 }}>
+                          Sesión {selectedSession.session_number}: {selectedSession.title}
+                        </h3>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <button onClick={() => void onExtendSessionInfo()} disabled={sessionExtending}>
+                            {sessionExtending ? 'Extendiendo…' : 'Extender información'}
+                          </button>
+                          <button onClick={() => setSelectedSessionId(null)} disabled={!selectedSessionId}>
+                            Cerrar detalle
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+                        <div>
+                          <div style={{ opacity: 0.75, fontSize: 12 }}>Resumen</div>
+                          <div>
+                            {selectedSession.summary ? renderMarkdownLite(selectedSession.summary) : <span style={{ opacity: 0.75 }}>(vacío)</span>}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                          <div>
+                            <div style={{ opacity: 0.75, fontSize: 12 }}>Estado</div>
+                            <div>{toSpanishStatus(selectedSession.status)}</div>
+                          </div>
+                          <div>
+                            <div style={{ opacity: 0.75, fontSize: 12 }}>Aprobación</div>
+                            <div>{toSpanishStatus(selectedSession.approval_status)}</div>
+                          </div>
+                          <div>
+                            <div style={{ opacity: 0.75, fontSize: 12 }}>Jugada</div>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                              <input
+                                type="checkbox"
+                                checked={!!selectedSession.played}
+                                onChange={(e) => {
+                                  const checked = e.target.checked
+                                  setSessions((prev) =>
+                                    prev
+                                      ? prev.map((item) =>
+                                          item.id === selectedSession.id ? { ...item, played: checked } : item,
+                                        )
+                                      : prev,
+                                  )
+                                  void api
+                                    .patchSession(selectedSession.id, { played: checked })
+                                    .then((updated) => {
+                                      setSessions((prev) =>
+                                        prev
+                                          ? prev.map((item) => (item.id === updated.id ? updated : item))
+                                          : prev,
+                                      )
+                                    })
+                                    .catch((err) => setSessionsError(formatError(err)))
+                                }}
+                              />
+                              {selectedSession.played ? 'Sí' : 'No'}
+                            </label>
+                          </div>
+                          <div>
+                            <div style={{ opacity: 0.75, fontSize: 12 }}>Fecha prevista</div>
+                            <div>{formatPlannedDate(selectedSession.notes)}</div>
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ opacity: 0.75, fontSize: 12 }}>Notas</div>
+                          <div style={{ whiteSpace: 'pre-wrap' }}>
+                            {selectedSession.notes ?? <span style={{ opacity: 0.75 }}>(vacío)</span>}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ opacity: 0.75, fontSize: 12 }}>Contenido draft</div>
+                          <div style={{ opacity: 0.8, fontSize: 12, marginBottom: 6 }}>
+                            Texto editable (como el resumen de campaña).
+                          </div>
+                          <div>{renderMarkdownLite(sessionDraftEditor)}</div>
+                          <textarea
+                            rows={12}
+                            value={sessionDraftEditor}
+                            onChange={(e) => setSessionDraftEditor(e.target.value)}
+                            style={{ width: '100%', marginTop: 8 }}
+                            disabled={sessionDraftSaving}
+                          />
+                          <div style={{ marginTop: 8 }}>
+                            <button onClick={() => void onSaveSessionDraft()} disabled={sessionDraftSaving}>
+                              {sessionDraftSaving ? 'Guardando…' : 'Guardar contenido draft'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ opacity: 0.8 }}>(Selecciona una sesión para ver el detalle)</div>
+                  )}
+                </div>
+              )}
+                </div>
+              )}
+
+              {detailTab === 'jugadores' && (
+                <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                <h3 style={{ margin: 0 }}>Resumen final de historia</h3>
-                <button onClick={() => void onReopenCampaign()} disabled={reopening}>
-                  {reopening ? 'Reabriendo…' : 'Volver a borrador'}
+                <h3 style={{ marginTop: 0 }}>Personajes jugadores</h3>
+                <button
+                  onClick={() => {
+                    setPlayersError(null)
+                    setCreatePlayersOpen(true)
+                  }}
+                  disabled={playersLoading || campaign.brief_status !== 'approved'}
+                >
+                  {playersLoading ? 'Generando…' : 'Crear y generar'}
                 </button>
               </div>
-              <div style={{ marginTop: 10 }}>{storyFinalRendered}</div>
-            </div>
+              {playersError && <div style={{ color: 'salmon' }}>{playersError}</div>}
+              {createPlayersOpen && (
+                <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 12 }}>
+                  <h4 style={{ margin: '0 0 8px 0' }}>Crear personajes jugadores</h4>
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <span style={{ opacity: 0.75, fontSize: 12 }}>¿Cuántos jugadores crear? (1-8)</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={8}
+                        value={createPlayersCount}
+                        onChange={(e) => setCreatePlayersCount(Number(e.target.value))}
+                        style={{
+                          padding: 8,
+                          borderRadius: 10,
+                          border: '1px solid rgba(255,255,255,0.12)',
+                          background: 'rgba(0,0,0,0.25)',
+                          color: 'inherit',
+                          width: 140,
+                        }}
+                        disabled={playersLoading}
+                      />
+                    </label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => setCreatePlayersOpen(false)} disabled={playersLoading}>
+                        Cancelar
+                      </button>
+                      <button onClick={() => void onCreateAndGeneratePlayers()} disabled={playersLoading}>
+                        {playersLoading ? 'Creando…' : 'Crear y generar'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {derivedPlayers.length === 0 && !playersLoading && (
+                <div>
+                  Aún no hay personajes jugadores. Deben generarse aparte y no se derivan del mundo ni de los personajes implicados.
+                </div>
+              )}
+              {derivedPlayers.length > 0 && (
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div style={{ overflow: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead style={{ background: 'rgba(255,255,255,0.04)' }}>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: 10 }}>Jugador</th>
+                          <th style={{ textAlign: 'left', padding: 10 }}>Resumen</th>
+                          <th style={{ textAlign: 'left', padding: 10 }}>Ficha básica</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {derivedPlayers.map((p, idx) => (
+                          <tr
+                            key={p.id}
+                            style={{
+                              borderTop: '1px solid rgba(255,255,255,0.08)',
+                              background: selectedPlayerIndex === idx ? 'rgba(255,255,255,0.04)' : undefined,
+                            }}
+                          >
+                            <td style={{ padding: 10 }}>
+                              <button onClick={() => setSelectedPlayerIndex(idx)} disabled={selectedPlayerIndex === idx}>
+                                {p.name}
+                              </button>
+                            </td>
+                            <td style={{ padding: 10 }}>{p.summary || <span style={{ opacity: 0.75 }}>(vacío)</span>}</td>
+                            <td style={{ padding: 10, maxWidth: 320 }}>
+                              <code style={{ fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                {stringifyMaybeJson(p.basicSheet).slice(0, 140)}
+                                {stringifyMaybeJson(p.basicSheet).length > 140 ? '…' : ''}
+                              </code>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {selectedPlayer ? (
+                    <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                        <h3 style={{ margin: 0 }}>{selectedPlayer.name}</h3>
+                        <div style={{ opacity: 0.75, fontSize: 12 }}>Vista de detalle</div>
+                      </div>
+                      <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+                        <div>
+                          <div style={{ opacity: 0.75, fontSize: 12 }}>Resumen del jugador</div>
+                          <div>{selectedPlayer.summary || <span style={{ opacity: 0.75 }}>(vacío)</span>}</div>
+                        </div>
+                        <div>
+                          <div style={{ opacity: 0.75, fontSize: 12 }}>Ficha básica</div>
+                          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12 }}>
+                            {stringifyMaybeJson(selectedPlayer.basicSheet)}
+                          </pre>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ opacity: 0.8 }}>(Selecciona un jugador para ver el detalle)</div>
+                  )}
+                </div>
+              )}
+                </div>
+              )}
+            </>
           )}
         </>
       )}

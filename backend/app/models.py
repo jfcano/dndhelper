@@ -104,3 +104,11 @@ class Session(Base):
         nullable=False,
     )
 
+    @property
+    def played(self) -> bool:
+        return (self.status or "").strip().lower() == "played"
+
+    @played.setter
+    def played(self, value: bool) -> None:
+        self.status = "played" if bool(value) else "planned"
+

@@ -1,0 +1,29 @@
+Genera exactamente __PLAYER_COUNT__ personajes jugadores (PCs) para esta campaña.
+
+IMPORTANTE:
+- NO derives los PCs a partir del mundo ni de NPCs del mundo.
+- Deben encajar con el tipo/tono/temas del brief de campaña.
+- Deben estar pensados para una mesa de DnD 5e y ser complementarios entre si.
+
+Input (brief JSON):
+__BRIEF_JSON__
+
+Salida requerida (JSON):
+{
+  "players": [
+    {
+      "name": "Nombre del PJ",
+      "summary": "Resumen breve del concepto del personaje.",
+      "basic_sheet": {
+        "class": "Clase",
+        "subclass": "Subclase opcional",
+        "species": "Especie",
+        "background": "Trasfondo",
+        "alignment_hint": "Tendencia sugerida",
+        "level": 1,
+        "hooks": ["Gancho 1", "Gancho 2"],
+        "party_role": "Rol dentro del grupo"
+      }
+    }
+  ]
+}

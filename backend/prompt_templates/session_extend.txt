@@ -1,0 +1,26 @@
+Amplia y mejora el contenido de una sesion para que quede listo para dirigir.
+
+Contexto de campana (story markdown):
+__CAMPAIGN_STORY_MD__
+
+Datos actuales de la sesion:
+- Titulo: __SESSION_TITLE__
+- Resumen actual:
+__SESSION_SUMMARY__
+
+- Contenido draft actual (si existe):
+__SESSION_DRAFT_MD__
+
+Objetivo:
+- Devolver SOLO Markdown (sin JSON).
+- Mejorar y ampliar el texto, manteniendo coherencia con la historia de campana.
+- Organizar la sesion por escenas dentro del texto (no como entidades).
+- Incluir como minimo:
+  - Introduccion de la sesion
+  - Escenas (`## Escena N: ...`)
+  - Ganchos y transiciones entre escenas
+  - Notas para el DM (decision points, complicaciones, pistas)
+
+Importante:
+- No inventes un formato JSON.
+- Si faltan datos concretos, propone opciones jugables en forma de bullets.

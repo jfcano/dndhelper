@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.app.models import Campaign, Session as CampaignSession
@@ -88,6 +88,14 @@ def list_sessions_by_campaign(
     return list(db.execute(stmt).scalars().all())
 
 
+def delete_sessions_by_campaign(db: Session, owner_id: UUID, campaign_id: UUID) -> None:
+    if not get_campaign(db, owner_id, campaign_id):
+        raise LookupError("Campaign no encontrada.")
+    stmt = delete(CampaignSession).where(CampaignSession.campaign_id == campaign_id)
+    db.execute(stmt)
+    db.commit()
+
+
 def get_session(db: Session, owner_id: UUID, session_id: UUID) -> CampaignSession | None:
     stmt = (
         select(CampaignSession)
@@ -110,4 +118,21 @@ def update_session(db: Session, obj: CampaignSession, payload: SessionUpdate) ->
 def delete_session(db: Session, obj: CampaignSession) -> None:
     db.delete(obj)
     db.commit()
+
+
+def renumber_sessions_for_campaign(db: Session, campaign_id: UUID) -> None:
+    stmt = (
+        select(CampaignSession)
+        .where(CampaignSession.campaign_id == campaign_id)
+        .order_by(CampaignSession.session_number.asc(), CampaignSession.created_at.asc())
+    )
+    rows = list(db.execute(stmt).scalars().all())
+    changed = False
+    for idx, row in enumerate(rows, start=1):
+        if row.session_number != idx:
+            row.session_number = idx
+            db.add(row)
+            changed = True
+    if changed:
+        db.commit()
 

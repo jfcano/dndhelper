@@ -54,13 +54,41 @@ def outline_prompt_es(*, brief: dict, world: dict) -> str:
         },
     )
 
-def sessions_prompt_es(*, outline: dict, session_count: int, starting_session_number: int) -> str:
+def sessions_prompt_es(*, story_md: str, session_count: int, starting_session_number: int) -> str:
     return render_prompt_template(
         "campaign_sessions.txt",
         {
             "__SESSION_COUNT__": str(session_count),
             "__STARTING_SESSION_NUMBER__": str(starting_session_number),
-            "__OUTLINE_JSON__": json.dumps(outline, ensure_ascii=False, indent=2),
+            "__STORY_MD__": story_md,
+        },
+    )
+
+
+def campaign_players_prompt_es(*, brief: dict, player_count: int) -> str:
+    return render_prompt_template(
+        "campaign_players.txt",
+        {
+            "__BRIEF_JSON__": json.dumps(brief, ensure_ascii=False, indent=2),
+            "__PLAYER_COUNT__": str(player_count),
+        },
+    )
+
+
+def session_extend_prompt_es(
+    *,
+    campaign_story_md: str,
+    session_title: str,
+    session_summary: str,
+    session_draft_md: str,
+) -> str:
+    return render_prompt_template(
+        "session_extend.txt",
+        {
+            "__CAMPAIGN_STORY_MD__": campaign_story_md,
+            "__SESSION_TITLE__": session_title,
+            "__SESSION_SUMMARY__": session_summary,
+            "__SESSION_DRAFT_MD__": session_draft_md,
         },
     )
 

@@ -35,6 +35,40 @@ export type Campaign = {
   updated_at: string
 }
 
+export type Session = {
+  id: UUID
+  campaign_id: UUID
+  session_number: number
+  title: string
+  summary: string | null
+  status: string
+  notes: string | null
+  content_draft: string | null
+  content_final: string | null
+  approval_status: string
+  played: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type PlayerProfile = {
+  name: string
+  summary: string
+  basic_sheet?: Record<string, unknown> | string | null
+}
+
+export type SessionUpdate = Partial<{
+  session_number: number
+  title: string
+  summary: string | null
+  status: string
+  notes: string | null
+  content_draft: string | null
+  content_final: string | null
+  approval_status: string
+  played: boolean
+}>
+
 export type WorldCreate = { name?: string }
 export type WorldUpdate = Partial<Pick<World, 'name' | 'pitch' | 'tone' | 'themes' | 'content_draft'>>
 export type WorldWizardFactionInput = {
@@ -176,6 +210,25 @@ export const api = {
   generateWorldForCampaign: (id: UUID) =>
     request<Campaign>(`/api/campaigns/${id}/world:generate`, { method: 'POST', body: '{}' }),
   deleteCampaign: (id: UUID) => request<{ ok: boolean }>(`/api/campaigns/${id}`, { method: 'DELETE' }),
+  listSessionsForCampaign: (campaignId: UUID, limit = 50, offset = 0) =>
+    request<Session[]>(
+      `/api/campaigns/${campaignId}/sessions?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`,
+    ),
+  getSession: (sessionId: UUID) => request<Session>(`/api/sessions/${sessionId}`),
+  patchSession: (sessionId: UUID, payload: SessionUpdate) =>
+    request<Session>(`/api/sessions/${sessionId}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  deleteSession: (sessionId: UUID) => request<{ ok: boolean }>(`/api/sessions/${sessionId}`, { method: 'DELETE' }),
+  extendSession: (sessionId: UUID) => request<Session>(`/api/sessions/${sessionId}/extend`, { method: 'POST', body: '{}' }),
+  generateSessionsForCampaign: (campaignId: UUID, sessionCount: number) =>
+    request<Session[]>(
+      `/api/campaigns/${campaignId}/sessions:generate?session_count=${encodeURIComponent(sessionCount)}`,
+      { method: 'POST', body: '{}' },
+    ),
+  generatePlayersForCampaign: (campaignId: UUID, playerCount: number) =>
+    request<PlayerProfile[]>(
+      `/api/campaigns/${campaignId}/players:generate?player_count=${encodeURIComponent(playerCount)}`,
+      { method: 'POST', body: '{}' },
+    ),
 
   // Worlds
   listWorlds: (limit = 50, offset = 0) =>
@@ -184,12 +237,16 @@ export const api = {
   createWorld: (payload: WorldCreate) => request<World>(`/api/worlds`, { method: 'POST', body: JSON.stringify(payload) }),
   generateWorld: (payload: WorldGenerate) =>
     request<World>(`/api/worlds:generate`, { method: 'POST', body: JSON.stringify(payload) }),
+  generateWorldForExistingWorld: (id: UUID, payload: WorldGenerate) =>
+    request<World>(`/api/worlds/${id}/generate`, { method: 'POST', body: JSON.stringify(payload) }),
   autogenerateWorldWizardStep: (payload: WorldWizardAutogenerateRequest) =>
     request<WorldWizardAutogenerateResponse>(`/api/worlds:wizard/autogenerate`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
   getWorldUsage: (id: UUID) => request<WorldUsage>(`/api/worlds/${id}/usage`),
+  listCampaignsForWorld: (id: UUID, limit = 50, offset = 0) =>
+    request<Campaign[]>(`/api/worlds/${id}/campaigns?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`),
   patchWorld: (id: UUID, payload: WorldUpdate) =>
     request<World>(`/api/worlds/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   approveWorld: (id: UUID) => request<World>(`/api/worlds/${id}/approve`, { method: 'POST', body: '{}' }),

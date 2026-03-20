@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { Campaign } from '../lib/api'
 import { formatError } from '../lib/errors'
 import { toSpanishStatus } from '../lib/statusLabels'
 
 export function CampaignsPage() {
+  const navigate = useNavigate()
   const [items, setItems] = useState<Campaign[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -28,8 +29,8 @@ export function CampaignsPage() {
     setCreating(true)
     setError(null)
     try {
-      await api.createCampaign({ name: 'Nueva campaña', system: '5e' })
-      await reload()
+      const created = await api.createCampaign({ name: 'Nueva campaña', system: '5e' })
+      navigate(`/campaigns/${created.id}`)
     } catch (e) {
       setError(formatError(e))
     } finally {
@@ -59,7 +60,6 @@ export function CampaignsPage() {
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
         <h2 style={{ margin: 0 }}>Campañas</h2>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => void reload()}>Recargar</button>
           <button onClick={() => void onCreateCampaign()} disabled={creating}>
             {creating ? 'Creando…' : 'Crear campaña'}
           </button>
@@ -78,7 +78,6 @@ export function CampaignsPage() {
                 <th style={{ textAlign: 'left', padding: 10 }}>Sistema</th>
                 <th style={{ textAlign: 'left', padding: 10 }}>Mundo</th>
                 <th style={{ textAlign: 'left', padding: 10 }}>Resumen inicial</th>
-                <th style={{ textAlign: 'left', padding: 10 }}>Esquema</th>
                 <th style={{ textAlign: 'left', padding: 10 }}>Acciones</th>
               </tr>
             </thead>
@@ -91,7 +90,6 @@ export function CampaignsPage() {
                   <td style={{ padding: 10 }}>{c.system}</td>
                   <td style={{ padding: 10 }}>{c.world_id ? <code>{c.world_id.slice(0, 8)}…</code> : <em>—</em>}</td>
                   <td style={{ padding: 10 }}>{toSpanishStatus(c.brief_status)}</td>
-                  <td style={{ padding: 10 }}>{toSpanishStatus(c.outline_status)}</td>
                   <td style={{ padding: 10 }}>
                     <button onClick={() => void onDeleteCampaign(c)} disabled={deletingCampaignId === c.id}>
                       {deletingCampaignId === c.id ? 'Borrando…' : 'Borrar'}
@@ -101,7 +99,7 @@ export function CampaignsPage() {
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td style={{ padding: 10, opacity: 0.8 }} colSpan={6}>
+                  <td style={{ padding: 10, opacity: 0.8 }} colSpan={5}>
                     No hay campañas todavía.
                   </td>
                 </tr>

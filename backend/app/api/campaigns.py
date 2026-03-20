@@ -126,6 +126,11 @@ def set_brief(campaign_id: UUID, payload: CampaignBrief, db: Session = Depends(g
         "status": world.status,
     }
 
+    # Sugiere un nombre al generar el borrador narrativo (editable por el usuario).
+    # Solo reemplazamos si el nombre está en el valor por defecto.
+    if (obj.name or "").strip().lower() == "nueva campaña":
+        obj.name = generation_service.suggest_campaign_name(brief=obj.brief_draft, world=world_payload)
+
     obj.story_draft = generation_service.generate_campaign_story_draft(brief=obj.brief_draft, world=world_payload)
     db.add(obj)
     db.commit()
@@ -177,6 +182,12 @@ def approve_brief(campaign_id: UUID, db: Session = Depends(get_db)) -> CampaignO
             "content_draft": world.content_draft,
             "status": world.status,
         }
+
+        # Si el story_draft aún no existe, sugerimos también un nombre al generarlo.
+        # Solo reemplazamos si el nombre está en el valor por defecto.
+        if (obj.name or "").strip().lower() == "nueva campaña":
+            obj.name = generation_service.suggest_campaign_name(brief=obj.brief_draft, world=world_payload)
+
         obj.story_draft = generation_service.generate_campaign_story_draft(brief=obj.brief_draft, world=world_payload)
 
     obj.brief_final = obj.brief_draft
@@ -324,25 +335,28 @@ def generate_sessions_for_campaign(
     campaign = crud.get_campaign(db, owner_id, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
-    if campaign.outline_status != "approved" or not campaign.outline_final:
-        raise HTTPException(status_code=400, detail="El outline debe estar aprobado antes de generar sesiones.")
+
+    if campaign.brief_status != "approved" or not campaign.brief_final:
+        raise HTTPException(status_code=400, detail="El brief debe estar aprobado antes de generar sesiones.")
     if not campaign.world_id:
         raise HTTPException(status_code=400, detail="La campaign debe tener world_id vinculado para generar sesiones.")
 
-    outline_payload = {"outline": campaign.outline_final}
+    story_text = campaign.story_final or campaign.story_draft
+    if not story_text:
+        raise HTTPException(status_code=400, detail="No hay story para generar sesiones.")
+
+    existing_sessions = crud.list_sessions_by_campaign(db, owner_id, campaign_id, limit=1000, offset=0)
+    starting_session_number = max((s.session_number for s in existing_sessions), default=0) + 1
 
     sessions_raw = generation_service.generate_sessions(
-        outline=outline_payload,
+        story_md=story_text,
         session_count=max(1, min(session_count, 20)),
-        starting_session_number=1,
+        starting_session_number=starting_session_number,
     )
 
     created: list[SessionOut] = []
-    for s in sessions_raw:
-        try:
-            session_number = int(s.get("session_number") or 1)
-        except Exception:
-            session_number = 1
+    for idx, s in enumerate(sessions_raw):
+        session_number = starting_session_number + idx
         title = str(s.get("title") or f"Sesión {session_number}")
         summary = s.get("summary")
         content = s.get("content_draft")
@@ -350,7 +364,9 @@ def generate_sessions_for_campaign(
             db,
             owner_id,
             campaign_id,
-            SessionCreate(session_number=session_number, title=title, summary=summary, status="planned"),
+            # `notes` se usa para "fecha prevista". Por defecto la dejamos vacía,
+            # y se rellenará cuando se extienda/refine la sesión.
+            SessionCreate(session_number=session_number, title=title, summary=summary, notes=None, status="planned"),
         )
         # persistir detalle como draft
         if isinstance(content, (dict, list)):
@@ -365,6 +381,23 @@ def generate_sessions_for_campaign(
         created.append(obj)
 
     return created
+
+
+@router.post("/{campaign_id}/players:generate")
+def generate_players_for_campaign(
+    campaign_id: UUID, player_count: int = 4, db: Session = Depends(get_db)
+) -> list[dict]:
+    owner_id = get_owner_id()
+    campaign = crud.get_campaign(db, owner_id, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign no encontrada.")
+    if campaign.brief_status != "approved" or not campaign.brief_final:
+        raise HTTPException(status_code=400, detail="El brief debe estar aprobado antes de generar jugadores.")
+
+    return generation_service.generate_player_characters(
+        brief=campaign.brief_final,
+        player_count=max(1, min(player_count, 8)),
+    )
 
 
 @router.patch("/{campaign_id}/outline", response_model=CampaignOut)

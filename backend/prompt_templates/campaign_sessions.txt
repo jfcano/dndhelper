@@ -1,7 +1,7 @@
-A partir del outline, genera sesiones MUY detalladas para un DM.
+A partir del resumen inicial (Markdown del story), genera sesiones MUY detalladas para un DM.
 Quiero exactamente __SESSION_COUNT__ sesiones empezando por session_number=__STARTING_SESSION_NUMBER__.
-Input (outline):
-__OUTLINE_JSON__
+Input (story markdown):
+__STORY_MD__
 
 Salida requerida: JSON con esta estructura aproximada:
 {
@@ -9,19 +9,15 @@ Salida requerida: JSON con esta estructura aproximada:
     {
       "session_number": 1,
       "title": "Título",
-      "summary": "Resumen",
-      "content_draft": {
-        "opening_scene": "...",
-        "objectives": ["..."],
-        "scenes": [{"name": "...", "beat": "..."}],
-        "encounters": [{"type": "social|combat|exploration", "details": "..."}],
-        "npcs": [{"name": "...", "role": "..."}],
-        "locations": [{"name": "...", "purpose": "..."}],
-        "clues": ["..."],
-        "loot": ["..."],
-        "complications": ["..."],
-        "dm_notes": ["..."]
-      }
+      "summary": "Resumen breve en Markdown (2-4 parrafos).",
+      "content_draft": "Texto en Markdown para la sesion, con secciones y escenas dentro del texto."
     }
   ]
 }
+
+REQUISITOS PARA `content_draft`:
+- Debe ser Markdown legible para el DM.
+- Debe incluir secciones por escenas usando encabezados, por ejemplo:
+  - `## Escena 1: ...`
+  - `## Escena 2: ...`
+- Las escenas NO son entidades separadas ni JSON: son organizacion interna del texto.

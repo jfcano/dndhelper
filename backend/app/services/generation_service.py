@@ -10,6 +10,8 @@ from backend.app.config import get_settings
 from backend.app.prompts.loader import render_prompt_template
 from backend.app.services.rag_service import answer_question
 from backend.app.prompts.campaign_generation import (
+    campaign_players_prompt_es,
+    session_extend_prompt_es,
     campaign_wizard_step_prompt_es,
     campaign_story_draft_prompt_es,
     campaign_story_markdown_system_rules_es,
@@ -74,6 +76,59 @@ def _world_flavor(wizard: dict[str, Any]) -> str:
         if cleaned:
             return cleaned[:160]
     return "fantasía de aventura con tensiones políticas y misterios antiguos"
+
+
+def suggest_campaign_name(*, brief: dict, world: dict) -> str:
+    """
+    Sugiere un nombre para la campaña basándose en el brief y el mundo.
+    - Heurística determinista (evita depender de una llamada extra a LLM en MVP).
+    - El usuario siempre podrá editar el nombre desde la UI.
+    """
+    def _smart_title(s: str) -> str:
+        txt = (s or "").strip()
+        if not txt:
+            return txt
+        # Si parece un acrónimo (todas mayúsculas), lo dejamos tal cual.
+        if txt.isupper():
+            return txt
+
+        parts = txt.split(' ')
+        titled: list[str] = []
+        for p in parts:
+            if not p:
+                continue
+            if not any(ch.isalpha() for ch in p):
+                titled.append(p)
+                continue
+            titled.append(p[0].upper() + p[1:].lower())
+        return ' '.join(titled).strip()
+
+    world_name = _smart_title(str(world.get("name") or "").strip() or "Mundo")
+
+    kind = _smart_title(str(brief.get("kind") or "").strip())
+    tone = _smart_title(str(brief.get("tone") or "").strip())
+
+    themes_raw = brief.get("themes")
+    themes: list[str] = []
+    if isinstance(themes_raw, list):
+        themes = [str(t).strip() for t in themes_raw if str(t).strip()]
+
+    theme = _smart_title(themes[0]) if themes else ""
+
+    base_parts: list[str] = []
+    if theme:
+        base_parts.append(theme)
+    elif kind:
+        base_parts.append(kind)
+
+    if tone and tone not in base_parts:
+        base_parts.append(tone)
+
+    base = " ".join(base_parts).strip() or (kind or "Campaña")
+
+    # Mantenerlo razonablemente corto para UI.
+    suggested = f"{base} ({world_name})"
+    return suggested[:90].rstrip()
 
 
 def _normalize_factions(items: list[dict], *, flavor: str) -> list[dict]:
@@ -421,15 +476,16 @@ def generate_campaign_story_draft(*, brief: dict, world: dict) -> str:
 
 def generate_sessions(
     *,
-    outline: dict,
+    story_md: str,
     session_count: int,
     starting_session_number: int,
 ) -> list[dict]:
     llm = _get_llm()
+    story_md_snippet = str(story_md or "").strip()[:12000]
     messages = [
         ("system", system_rules_es()),
         ("user", sessions_prompt_es(
-            outline=outline,
+            story_md=story_md_snippet,
             session_count=session_count,
             starting_session_number=starting_session_number,
         )),
@@ -439,6 +495,45 @@ def generate_sessions(
     if not isinstance(sessions, list):
         raise ValueError("Salida inválida: falta 'sessions' como lista.")
     return [s for s in sessions if isinstance(s, dict)]
+
+
+def generate_player_characters(*, brief: dict, player_count: int) -> list[dict]:
+    llm = _get_llm()
+    safe_count = max(1, min(int(player_count), 8))
+    messages = [
+        ("system", system_rules_es()),
+        ("user", campaign_players_prompt_es(brief=brief, player_count=safe_count)),
+    ]
+    raw = _parse_json(llm.invoke(messages).content)
+    players = raw.get("players")
+    if not isinstance(players, list):
+        raise ValueError("Salida invalida: falta 'players' como lista.")
+    return [p for p in players if isinstance(p, dict)]
+
+
+def extend_session_markdown(
+    *,
+    campaign_story_md: str,
+    session_title: str,
+    session_summary: str,
+    session_draft_md: str,
+) -> str:
+    llm = _get_llm()
+    prompt = session_extend_prompt_es(
+        campaign_story_md=str(campaign_story_md or "")[:12000],
+        session_title=str(session_title or "")[:300],
+        session_summary=str(session_summary or "")[:4000],
+        session_draft_md=str(session_draft_md or "")[:12000],
+    )
+    messages = [
+        ("system", campaign_story_markdown_system_rules_es()),
+        ("user", prompt),
+    ]
+    out = getattr(llm.invoke(messages), "content", "")
+    md = str(out).strip()
+    if not md:
+        raise ValueError("Salida invalida: markdown vacio al extender sesion.")
+    return md
 
 
 def autogenerate_world_wizard_step(*, step: int, wizard: dict[str, Any]) -> dict[str, Any]:

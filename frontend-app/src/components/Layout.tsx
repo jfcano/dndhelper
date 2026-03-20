@@ -7,11 +7,11 @@ export function Layout() {
       <header className="topbar">
         <div className="brand">dndhelper</div>
         <nav className="nav">
-          <NavLink to="/campaigns" className={({ isActive }) => (isActive ? 'active' : undefined)}>
-            Campañas
-          </NavLink>
           <NavLink to="/worlds" className={({ isActive }) => (isActive ? 'active' : undefined)}>
             Mundos
+          </NavLink>
+          <NavLink to="/campaigns" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Campañas
           </NavLink>
         </nav>
       </header>

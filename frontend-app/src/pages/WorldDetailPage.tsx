@@ -1,9 +1,10 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../lib/api'
-import type { World } from '../lib/api'
+import type { Campaign, World } from '../lib/api'
 import { formatError } from '../lib/errors'
 import { toSpanishStatus } from '../lib/statusLabels'
+import { WorldCreationWizard } from '../components/WorldCreationWizard'
 
 function renderInlineBold(text: string): ReactNode {
   // Soporta **negritas** de forma simple y segura (sin HTML).
@@ -136,12 +137,17 @@ export function WorldDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [world, setWorld] = useState<World | null>(null)
+  const [tab, setTab] = useState<'contenido' | 'campañas'>('contenido')
   const [content, setContent] = useState('')
   const [saving, setSaving] = useState(false)
   const [approving, setApproving] = useState(false)
   const [reopening, setReopening] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
+
+  const [campaigns, setCampaigns] = useState<Campaign[] | null>(null)
+  const [campaignsLoading, setCampaignsLoading] = useState(false)
+  const [campaignsError, setCampaignsError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -162,12 +168,50 @@ export function WorldDetailPage() {
     }
   }, [id])
 
+  useEffect(() => {
+    if (!world || tab !== 'campañas') return
+    let alive = true
+    setCampaignsLoading(true)
+    setCampaignsError(null)
+    api
+      .listCampaignsForWorld(world.id)
+      .then((list) => {
+        if (!alive) return
+        setCampaigns(list)
+      })
+      .catch((e) => {
+        if (!alive) return
+        setCampaignsError(formatError(e))
+      })
+      .finally(() => {
+        if (!alive) return
+        setCampaignsLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [world, tab])
+
   const previewText = useMemo(() => {
     if (!world) return ''
     if (world.status === 'approved') return world.content_final ?? ''
     return content
   }, [world, content])
   const rendered = useMemo(() => renderMarkdownLite(previewText), [previewText])
+
+  const showWorldWizard = useMemo(() => {
+    if (!world) return false
+    if (world.status === 'approved') return false
+    const draft = world.content_draft ?? ''
+    return draft.trim().length === 0
+  }, [world])
+
+  function onWorldGenerated(updated: World) {
+    setWorld(updated)
+    setContent(updated.content_draft ?? '')
+    setError(null)
+    setOk('Mundo generado')
+  }
 
   async function onSave() {
     if (!id) return
@@ -247,47 +291,107 @@ export function WorldDetailPage() {
                 <div>{toSpanishStatus(world.status)}</div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                {world.status !== 'approved' ? (
+                {tab === 'contenido' && !showWorldWizard && (
                   <>
-                    <button onClick={onSave} disabled={saving}>
-                      {saving ? 'Guardando…' : 'Guardar borrador'}
-                    </button>
-                    <button onClick={onApprove} disabled={approving}>
-                      {approving ? 'Aprobando…' : 'Aprobar'}
-                    </button>
+                    {world.status !== 'approved' ? (
+                      <>
+                        <button onClick={onSave} disabled={saving}>
+                          {saving ? 'Guardando…' : 'Guardar borrador'}
+                        </button>
+                        <button onClick={onApprove} disabled={approving}>
+                          {approving ? 'Aprobando…' : 'Aprobar'}
+                        </button>
+                      </>
+                    ) : (
+                      <button onClick={onReopen} disabled={reopening}>
+                        {reopening ? 'Reabriendo…' : 'Volver a borrador'}
+                      </button>
+                    )}
                   </>
-                ) : (
-                  <button onClick={onReopen} disabled={reopening}>
-                    {reopening ? 'Reabriendo…' : 'Volver a borrador'}
-                  </button>
                 )}
               </div>
             </div>
           </div>
 
-          <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
-            {world.status !== 'approved' && <h3 style={{ marginTop: 0 }}>Vista previa (solo lectura)</h3>}
-            {rendered}
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <button onClick={() => setTab('contenido')} disabled={tab === 'contenido'}>
+              Contenido
+            </button>
+            <button onClick={() => setTab('campañas')} disabled={tab === 'campañas'}>
+              Campañas
+            </button>
           </div>
 
-          {world.status !== 'approved' && (
+          {tab === 'contenido' && (
+            <>
+              {showWorldWizard ? (
+                <WorldCreationWizard worldId={world.id} onWorldGenerated={onWorldGenerated} />
+              ) : (
+                <>
+                  <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
+                    {world.status !== 'approved' && <h3 style={{ marginTop: 0 }}>Vista previa (solo lectura)</h3>}
+                    {rendered}
+                  </div>
+
+                  {world.status !== 'approved' && (
+                    <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
+                      <h3 style={{ marginTop: 0 }}>Borrador (content_draft)</h3>
+                      <textarea
+                        value={content}
+                        onChange={(e) => setContent(e.target.value)}
+                        rows={18}
+                        style={{
+                          width: '100%',
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                          fontSize: 13,
+                          padding: 10,
+                          borderRadius: 10,
+                          border: '1px solid rgba(255,255,255,0.12)',
+                          background: 'rgba(0,0,0,0.25)',
+                          color: 'inherit',
+                        }}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
+          {tab === 'campañas' && (
             <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
-              <h3 style={{ marginTop: 0 }}>Borrador (content_draft)</h3>
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                rows={18}
-                style={{
-                  width: '100%',
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                  fontSize: 13,
-                  padding: 10,
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  background: 'rgba(0,0,0,0.25)',
-                  color: 'inherit',
-                }}
-              />
+              <h3 style={{ marginTop: 0 }}>Campañas vinculadas</h3>
+              {campaignsError && <div style={{ color: 'salmon' }}>{campaignsError}</div>}
+              {!campaigns && !campaignsError && campaignsLoading && <div>Cargando…</div>}
+              {campaigns && (
+                <div style={{ overflow: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead style={{ background: 'rgba(255,255,255,0.04)' }}>
+                      <tr>
+                        <th style={{ textAlign: 'left', padding: 10 }}>Nombre</th>
+                        <th style={{ textAlign: 'left', padding: 10 }}>Resumen inicial</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {campaigns.length === 0 && (
+                        <tr>
+                          <td style={{ padding: 10, opacity: 0.8 }} colSpan={2}>
+                            No hay campañas vinculadas a este mundo.
+                          </td>
+                        </tr>
+                      )}
+                      {campaigns.map((c) => (
+                        <tr key={c.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                          <td style={{ padding: 10 }}>
+                            <Link to={`/campaigns/${c.id}`}>{c.name}</Link>
+                          </td>
+                          <td style={{ padding: 10 }}>{toSpanishStatus(c.brief_status)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 

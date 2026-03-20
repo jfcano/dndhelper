@@ -156,6 +156,7 @@ class SessionUpdate(BaseModel):
     content_draft: str | None = None
     content_final: str | None = None
     approval_status: str | None = Field(default=None, min_length=1, max_length=20)
+    played: bool | None = None
 
 
 class SessionOut(BaseModel):
@@ -169,6 +170,7 @@ class SessionOut(BaseModel):
     content_draft: str | None
     content_final: str | None
     approval_status: str
+    played: bool
     created_at: datetime
     updated_at: datetime
 

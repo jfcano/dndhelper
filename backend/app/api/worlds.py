@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.db import get_db
 from backend.app.models import Campaign, World
 from backend.app.owner_context import get_owner_id
-from backend.app.schemas import WorldCreate, WorldGenerate, WorldOut, WorldUpdate, WorldWizardAutogenerateRequest
+from backend.app.schemas import WorldCreate, WorldGenerate, WorldOut, WorldUpdate, WorldWizardAutogenerateRequest, CampaignOut
 from backend.app.services import generation_service
 
 router = APIRouter(prefix="/worlds", tags=["worlds"])
@@ -63,6 +63,52 @@ def generate_world(payload: WorldGenerate, db: Session = Depends(get_db)) -> Wor
     return obj
 
 
+@router.post("/{world_id}/generate", response_model=WorldOut)
+def generate_world_for_existing_world(
+    world_id: UUID, payload: WorldGenerate, db: Session = Depends(get_db)
+) -> WorldOut:
+    owner_id = get_owner_id()
+    stmt = select(World).where(World.id == world_id, World.owner_id == owner_id)
+    obj = db.execute(stmt).scalars().first()
+    if not obj:
+        raise HTTPException(status_code=404, detail="World no encontrado.")
+
+    faction_names = {f.name.strip().lower() for f in payload.factions}
+    missing = sorted(
+        {
+            c.faction_name.strip()
+            for c in payload.characters
+            if c.faction_name.strip().lower() not in faction_names
+        }
+    )
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Hay personajes con facción no definida en el paso de facciones: {', '.join(missing)}",
+        )
+
+    gw = generation_service.generate_world_from_wizard(
+        theme_and_mood=payload.theme_and_mood,
+        factions=[f.model_dump() for f in payload.factions],
+        characters=[c.model_dump() for c in payload.characters],
+        cities=[c.model_dump() for c in payload.cities],
+    )
+
+    # Actualizamos el mundo existente y dejamos un borrador para que el usuario pueda revisarlo.
+    obj.name = gw.name
+    obj.pitch = gw.pitch
+    obj.tone = gw.tone
+    obj.themes = gw.themes
+    obj.content_draft = gw.content_draft
+    obj.content_final = None
+    obj.status = "draft"
+
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
 @router.post(":wizard/autogenerate")
 def autogenerate_world_wizard_step(payload: WorldWizardAutogenerateRequest) -> dict:
     patch = generation_service.autogenerate_world_wizard_step(
@@ -105,6 +151,30 @@ def get_world_usage(world_id: UUID, db: Session = Depends(get_db)) -> dict:
     )
     campaign_count = int(db.execute(usage_stmt).scalar_one() or 0)
     return {"campaign_count": campaign_count}
+
+
+@router.get("/{world_id}/campaigns", response_model=list[CampaignOut])
+def list_campaigns_for_world(
+    world_id: UUID, limit: int = 50, offset: int = 0, db: Session = Depends(get_db)
+) -> list[CampaignOut]:
+    owner_id = get_owner_id()
+
+    world_stmt = select(World).where(World.id == world_id, World.owner_id == owner_id)
+    world_obj = db.execute(world_stmt).scalars().first()
+    if not world_obj:
+        raise HTTPException(status_code=404, detail="World no encontrado.")
+
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+
+    stmt = (
+        select(Campaign)
+        .where(Campaign.owner_id == owner_id, Campaign.world_id == world_id)
+        .order_by(Campaign.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(db.execute(stmt).scalars().all())
 
 
 @router.patch("/{world_id}", response_model=WorldOut)
