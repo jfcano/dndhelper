@@ -194,8 +194,7 @@ Flujo recomendado (con aprobación entre fases):
 
 4. **Sesiones**
    - `POST /api/campaigns/{campaign_id}/sessions:generate?session_count=3`
-   - `PATCH /api/sessions/{session_id}` (editar resumen y `content_draft`; bloqueado si ya está aprobada)
-   - `POST /api/sessions/{session_id}/extend` (generar/ampliar guion con IA)
+   - `PATCH /api/sessions/{session_id}` (editar resumen y guion `content_draft` a mano; bloqueado si ya está aprobada)
    - `POST /api/sessions/{session_id}/approve`
    - `POST /api/sessions/{session_id}/reopen` (vuelve a borrador una sesión aprobada)
 
@@ -211,7 +210,6 @@ Endpoints:
 - `GET /api/sessions` o `GET /api/all-sessions` (todas las sesiones del propietario; `limit` / `offset`). No uses `/api/sessions/list`: se confunde con `/api/sessions/{session_id}`.
 - `GET /api/sessions/{session_id}`
 - `PATCH /api/sessions/{session_id}`
-- `POST /api/sessions/{session_id}/extend`
 - `POST /api/sessions/{session_id}/approve`
 - `POST /api/sessions/{session_id}/reopen`
 - `DELETE /api/sessions/{session_id}`
