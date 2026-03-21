@@ -1,25 +1,32 @@
-Amplia y mejora el contenido de una sesion para que quede listo para dirigir.
+Redacta el guion de la sesion para el DM, listo para llevar a mesa.
 
 Contexto de campana (story markdown):
 __CAMPAIGN_STORY_MD__
 
-Datos actuales de la sesion:
+Datos de la sesion:
 - Titulo: __SESSION_TITLE__
-- Resumen actual:
+- Resumen planificado (base obligatoria para el guion; respétalo y desarrollalo):
 __SESSION_SUMMARY__
 
-- Contenido draft actual (si existe):
+- Borrador previo del guion (puede estar vacio la primera vez):
 __SESSION_DRAFT_MD__
 
 Objetivo:
 - Devolver SOLO Markdown (sin JSON).
-- Mejorar y ampliar el texto, manteniendo coherencia con la historia de campana.
-- Organizar la sesion por escenas dentro del texto (no como entidades).
-- Incluir como minimo:
-  - Introduccion de la sesion
-  - Escenas (`## Escena N: ...`)
-  - Ganchos y transiciones entre escenas
-  - Notas para el DM (decision points, complicaciones, pistas)
+
+Si el borrador previo esta vacio o es solo espacios:
+- Genera el guion COMPLETO a partir del titulo, el **resumen planificado** (puede incluir ediciones manuales del usuario) y la **historia de campana**.
+- Desarrolla cada idea del resumen en escenas jugables, sin contradecir el resumen.
+- Manten **coherencia total** con el contexto de campana (tono, facciones, ganchos de la story): el guion debe encajar como un capitulo de esa campana.
+
+Si ya hay borrador con contenido:
+- Amplia y mejora ese texto, manteniendo coherencia con la historia de campana y alineado con el resumen planificado.
+
+En ambos casos, organiza la sesion por escenas dentro del Markdown (no como JSON ni listas de entidades):
+- Introduccion de la sesion
+- Escenas (`## Escena N: ...`)
+- Ganchos y transiciones entre escenas
+- Notas para el DM (decision points, complicaciones, pistas)
 
 Importante:
 - No inventes un formato JSON.

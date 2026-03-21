@@ -4,6 +4,7 @@ import { api } from '../lib/api'
 import type { Campaign, CampaignBrief, CampaignWizardDraft, PlayerProfile, Session, World } from '../lib/api'
 import { formatError } from '../lib/errors'
 import { toSpanishStatus } from '../lib/statusLabels'
+import { TabBar, TabButton } from '../components/TabBar'
 
 const CAMPAIGN_WIZARD_STORAGE_PREFIX = 'dndhelper.campaignWizard.v1'
 const CAMPAIGN_WIZARD_STEP_STORAGE_PREFIX = 'dndhelper.campaignWizard.step.v1'
@@ -144,18 +145,6 @@ type PlayerDerived = {
   basicSheet: unknown
 }
 
-function firstNonEmptyLine(text: string | null | undefined): string | null {
-  const raw = (text ?? '').trim()
-  if (!raw) return null
-  const lines = raw.split('\n').map((l) => l.trim())
-  return lines.find((l) => l.length > 0) ?? null
-}
-
-function formatPlannedDate(notes: string | null): string {
-  // Si no hay fecha explícita en `notes`, dejamos la celda vacía.
-  return firstNonEmptyLine(notes) ?? ''
-}
-
 function formatSheetLabel(rawKey: string): string {
   return rawKey
     .replace(/_/g, ' ')
@@ -289,8 +278,11 @@ export function CampaignDetailPage() {
   const [createSessionsError, setCreateSessionsError] = useState<string | null>(null)
   const [sessionDraftEditor, setSessionDraftEditor] = useState('')
   const [sessionDraftSaving, setSessionDraftSaving] = useState(false)
+  const [sessionSummaryEditor, setSessionSummaryEditor] = useState('')
+  const [sessionSummarySaving, setSessionSummarySaving] = useState(false)
   const [sessionDeleteLoadingId, setSessionDeleteLoadingId] = useState<string | null>(null)
-  const [sessionExtending, setSessionExtending] = useState(false)
+  const [sessionApproving, setSessionApproving] = useState(false)
+  const [sessionReopening, setSessionReopening] = useState(false)
 
   const [players, setPlayers] = useState<PlayerDerived[]>([])
   const [playersLoading, setPlayersLoading] = useState(false)
@@ -437,8 +429,26 @@ export function CampaignDetailPage() {
   }, [campaign, detailTab])
 
   useEffect(() => {
-    setSessionDraftEditor(selectedSession?.content_draft ?? '')
-  }, [selectedSession?.id, selectedSession?.content_draft])
+    if (!selectedSession) {
+      setSessionDraftEditor('')
+      setSessionSummaryEditor('')
+      return
+    }
+    // Sincronizar resumen con el valor en API (p. ej. tras «Crear y generar»).
+    setSessionSummaryEditor(selectedSession.summary ?? '')
+    const approved = selectedSession.approval_status === 'approved'
+    setSessionDraftEditor(
+      approved
+        ? (selectedSession.content_final ?? selectedSession.content_draft ?? '')
+        : (selectedSession.content_draft ?? ''),
+    )
+  }, [
+    selectedSession?.id,
+    selectedSession?.summary,
+    selectedSession?.content_draft,
+    selectedSession?.content_final,
+    selectedSession?.approval_status,
+  ])
 
   async function onCreateAndGenerateSessions() {
     if (!campaign) return
@@ -458,12 +468,13 @@ export function CampaignDetailPage() {
     }
   }
 
-  async function onExtendSessionInfo() {
+  async function onApproveSession() {
     if (!selectedSession) return
-    setSessionExtending(true)
+    if (selectedSession.approval_status === 'approved') return
+    setSessionApproving(true)
     setSessionsError(null)
     try {
-      const updated = await api.extendSession(selectedSession.id)
+      const updated = await api.approveSession(selectedSession.id)
       setSessions((prev) => {
         if (!prev) return prev
         return prev.map((item) => (item.id === updated.id ? updated : item))
@@ -471,12 +482,84 @@ export function CampaignDetailPage() {
     } catch (e) {
       setSessionsError(formatError(e))
     } finally {
-      setSessionExtending(false)
+      setSessionApproving(false)
+    }
+  }
+
+  async function onReopenSession() {
+    if (!selectedSession) return
+    if (selectedSession.approval_status !== 'approved') return
+    setSessionReopening(true)
+    setSessionsError(null)
+
+    const dbg = '[dndhelper UI] session «Volver a borrador»'
+    console.info(`${dbg} click`, {
+      campaignId: campaign?.id ?? null,
+      sessionId: selectedSession.id,
+      sessionNumber: selectedSession.session_number,
+      approval_status: selectedSession.approval_status,
+      content_draft_len: (selectedSession.content_draft ?? '').length,
+      content_final_len: (selectedSession.content_final ?? '').length,
+    })
+
+    try {
+      const updated = await api.reopenSession(selectedSession.id)
+      console.info(`${dbg} ok`, {
+        id: updated.id,
+        approval_status: updated.approval_status,
+        content_final: updated.content_final,
+        content_draft_len: (updated.content_draft ?? '').length,
+      })
+      setSessions((prev) => {
+        if (!prev) return prev
+        return prev.map((item) => (item.id === updated.id ? updated : item))
+      })
+    } catch (e) {
+      const extra =
+        e && typeof e === 'object' && 'status' in e && 'body' in e
+          ? { status: (e as { status: number }).status, body: (e as { body: unknown }).body }
+          : { raw: String(e) }
+      console.error(`${dbg} fallo`, extra)
+      const msg = formatError(e)
+      setSessionsError(
+        `${msg}\n\n(Abre la consola del navegador F12 → «Console» y busca «dndhelper» para ver URL, código HTTP y cuerpo de respuesta.)`,
+      )
+    } finally {
+      setSessionReopening(false)
+    }
+  }
+
+  async function onSaveSessionSummary() {
+    if (!selectedSession) return
+    if (selectedSession.approval_status === 'approved') {
+      setSessionsError('El resumen no se puede editar una vez aprobada la sesión.')
+      return
+    }
+    setSessionSummarySaving(true)
+    setSessionsError(null)
+    const trimmed = sessionSummaryEditor.replace(/\r\n/g, '\n').trimEnd()
+    try {
+      const updated = await api.patchSession(selectedSession.id, {
+        summary: trimmed.length > 0 ? trimmed : null,
+      })
+      setSessions((prev) => {
+        if (!prev) return prev
+        return prev.map((s) => (s.id === updated.id ? updated : s))
+      })
+      setSessionSummaryEditor(updated.summary ?? '')
+    } catch (e) {
+      setSessionsError(formatError(e))
+    } finally {
+      setSessionSummarySaving(false)
     }
   }
 
   async function onSaveSessionDraft() {
     if (!selectedSession) return
+    if (selectedSession.approval_status === 'approved') {
+      setSessionsError('La sesión ya está aprobada y no se puede editar.')
+      return
+    }
     setSessionDraftSaving(true)
     setSessionsError(null)
     try {
@@ -877,6 +960,10 @@ export function CampaignDetailPage() {
 
   async function onSaveCampaignName() {
     if (!id || !campaign) return
+    if (campaign.brief_status === 'approved') {
+      setError('El nombre no se puede cambiar una vez aprobado el resumen inicial.')
+      return
+    }
     const trimmed = campaignNameEditor.trim()
     if (!trimmed) {
       setError('El nombre no puede estar vacío.')
@@ -920,33 +1007,39 @@ export function CampaignDetailPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 2fr) minmax(140px, 1fr) minmax(140px, 1fr)', gap: 12, alignItems: 'start' }}>
               <div>
                 <div style={{ opacity: 0.75, fontSize: 12 }}>Nombre</div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
-                  <input
-                    value={campaignNameEditor}
-                    onChange={(e) => {
-                      setCampaignNameEditor(e.target.value)
-                      setCampaignNameDirty(true)
-                    }}
-                    style={{
-                      width: '100%',
-                      minWidth: 220,
-                      padding: 8,
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.12)',
-                      background: 'rgba(0,0,0,0.25)',
-                      color: 'inherit',
-                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                      fontSize: 13,
-                    }}
-                    disabled={nameSaving || saving || storySaving}
-                  />
-                  <button
-                    onClick={() => void onSaveCampaignName()}
-                    disabled={nameSaving || saving || !campaignNameDirty || !campaignNameEditor.trim()}
-                  >
-                    {nameSaving ? 'Guardando…' : 'Guardar'}
-                  </button>
-                </div>
+                {campaign.brief_status === 'approved' ? (
+                  <div style={{ marginTop: 6, fontWeight: 650, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: 13 }}>
+                    {campaign.name}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+                    <input
+                      value={campaignNameEditor}
+                      onChange={(e) => {
+                        setCampaignNameEditor(e.target.value)
+                        setCampaignNameDirty(true)
+                      }}
+                      style={{
+                        width: '100%',
+                        minWidth: 220,
+                        padding: 8,
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        background: 'rgba(0,0,0,0.25)',
+                        color: 'inherit',
+                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                        fontSize: 13,
+                      }}
+                      disabled={nameSaving || saving || storySaving}
+                    />
+                    <button
+                      onClick={() => void onSaveCampaignName()}
+                      disabled={nameSaving || saving || !campaignNameDirty || !campaignNameEditor.trim()}
+                    >
+                      {nameSaving ? 'Guardando…' : 'Guardar'}
+                    </button>
+                  </div>
+                )}
               </div>
               <div>
                 <div style={{ opacity: 0.75, fontSize: 12 }}>Sistema</div>
@@ -1159,62 +1252,17 @@ export function CampaignDetailPage() {
 
           {(campaign.brief_status === 'approved' || !!campaign.story_draft) && (
             <>
-              <div
-                style={{
-                  display: 'flex',
-                  gap: 6,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  borderRadius: 12,
-                  padding: 6,
-                  background: 'rgba(255,255,255,0.03)',
-                }}
-              >
-                <button
-                  onClick={() => setDetailTab('historia')}
-                  disabled={detailTab === 'historia'}
-                  style={{
-                    padding: '10px 18px',
-                    borderRadius: 10,
-                    border: detailTab === 'historia' ? '1px solid rgba(255,255,255,0.35)' : '1px solid transparent',
-                    background: detailTab === 'historia' ? 'rgba(255,255,255,0.16)' : 'transparent',
-                    fontSize: 15,
-                    fontWeight: 650,
-                    cursor: detailTab === 'historia' ? 'default' : 'pointer',
-                  }}
-                >
+              <TabBar style={{ marginTop: 10 }}>
+                <TabButton active={detailTab === 'historia'} onSelect={() => setDetailTab('historia')}>
                   Historia
-                </button>
-                <button
-                  onClick={() => setDetailTab('sesiones')}
-                  disabled={detailTab === 'sesiones'}
-                  style={{
-                    padding: '10px 18px',
-                    borderRadius: 10,
-                    border: detailTab === 'sesiones' ? '1px solid rgba(255,255,255,0.35)' : '1px solid transparent',
-                    background: detailTab === 'sesiones' ? 'rgba(255,255,255,0.16)' : 'transparent',
-                    fontSize: 15,
-                    fontWeight: 650,
-                    cursor: detailTab === 'sesiones' ? 'default' : 'pointer',
-                  }}
-                >
+                </TabButton>
+                <TabButton active={detailTab === 'sesiones'} onSelect={() => setDetailTab('sesiones')}>
                   Sesiones
-                </button>
-                <button
-                  onClick={() => setDetailTab('jugadores')}
-                  disabled={detailTab === 'jugadores'}
-                  style={{
-                    padding: '10px 18px',
-                    borderRadius: 10,
-                    border: detailTab === 'jugadores' ? '1px solid rgba(255,255,255,0.35)' : '1px solid transparent',
-                    background: detailTab === 'jugadores' ? 'rgba(255,255,255,0.16)' : 'transparent',
-                    fontSize: 15,
-                    fontWeight: 650,
-                    cursor: detailTab === 'jugadores' ? 'default' : 'pointer',
-                  }}
-                >
+                </TabButton>
+                <TabButton active={detailTab === 'jugadores'} onSelect={() => setDetailTab('jugadores')}>
                   Jugadores
-                </button>
-              </div>
+                </TabButton>
+              </TabBar>
 
               {detailTab === 'historia' && (
                 <>
@@ -1289,21 +1337,33 @@ export function CampaignDetailPage() {
                     disabled={
                       createSessionsLoading ||
                       sessionsLoading ||
-                      campaign.brief_status !== 'approved'
+                      campaign.brief_status !== 'approved' ||
+                      (campaign.outline_status || '').toLowerCase() !== 'approved'
                     }
                   >
                     {createSessionsLoading ? 'Generando…' : 'Crear y generar'}
                   </button>
                 </div>
               </div>
-              {sessionsError && <div style={{ color: 'salmon' }}>{sessionsError}</div>}
+              {sessionsError && (
+                <div style={{ color: 'salmon', whiteSpace: 'pre-wrap' }}>{sessionsError}</div>
+              )}
               {createSessionsError && <div style={{ color: 'salmon', marginTop: 8 }}>{createSessionsError}</div>}
+              {campaign.brief_status === 'approved' &&
+                (campaign.outline_status || '').toLowerCase() !== 'approved' && (
+                  <div style={{ marginTop: 8, opacity: 0.8, fontSize: 13 }}>
+                    Genera y aprueba el <strong>outline</strong> en la pestaña Historia antes de crear sesiones.
+                  </div>
+                )}
               {!sessions && !sessionsError && sessionsLoading && <div>Cargando…</div>}
               {sessions && sessions.length === 0 && <div>No hay sesiones para esta campaña.</div>}
 
               {createSessionsOpen && (
                 <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 12 }}>
                   <h4 style={{ margin: '0 0 8px 0' }}>Crear sesiones</h4>
+                  <p style={{ margin: 0, opacity: 0.85, fontSize: 13 }}>
+                    Se generan título y resumen por sesión. Luego puedes editar el resumen y redactar el guion (borrador) a mano en el detalle de cada sesión.
+                  </p>
                   <div style={{ display: 'grid', gap: 10 }}>
                     <label style={{ display: 'grid', gap: 6 }}>
                       <span style={{ opacity: 0.75, fontSize: 12 }}>¿Cuántas sesiones crear? (1-20)</span>
@@ -1347,8 +1407,7 @@ export function CampaignDetailPage() {
                         <tr>
                           <th style={{ textAlign: 'left', padding: 10 }}>Orden</th>
                           <th style={{ textAlign: 'left', padding: 10 }}>Nombre</th>
-                          <th style={{ textAlign: 'left', padding: 10 }}>Fecha prevista</th>
-                          <th style={{ textAlign: 'left', padding: 10 }}>Jugada</th>
+                          <th style={{ textAlign: 'left', padding: 10 }}>Aprobación</th>
                           <th style={{ textAlign: 'left', padding: 10 }}>Acciones</th>
                         </tr>
                       </thead>
@@ -1365,8 +1424,7 @@ export function CampaignDetailPage() {
                           >
                             <td style={{ padding: 10 }}>{s.session_number}</td>
                             <td style={{ padding: 10 }}>{s.title}</td>
-                            <td style={{ padding: 10 }}>{formatPlannedDate(s.notes)}</td>
-                            <td style={{ padding: 10 }}>{s.played ? 'Sí' : 'No'}</td>
+                            <td style={{ padding: 10 }}>{toSpanishStatus(s.approval_status)}</td>
                             <td style={{ padding: 10 }}>
                               <button
                                 onClick={(e) => {
@@ -1390,90 +1448,103 @@ export function CampaignDetailPage() {
                         <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>
                           Sesión {selectedSession.session_number}: {selectedSession.title}
                         </h3>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <button onClick={() => void onExtendSessionInfo()} disabled={sessionExtending}>
-                            {sessionExtending ? 'Extendiendo…' : 'Extender información'}
-                          </button>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                          {selectedSession.approval_status !== 'approved' ? (
+                            <button
+                              onClick={() => void onApproveSession()}
+                              disabled={
+                                sessionApproving || sessionReopening || sessionSummarySaving || sessionDraftSaving
+                              }
+                            >
+                              {sessionApproving ? 'Aprobando…' : 'Aprobar sesión'}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => void onReopenSession()}
+                              disabled={
+                                sessionReopening || sessionApproving || sessionSummarySaving || sessionDraftSaving
+                              }
+                            >
+                              {sessionReopening ? 'Reabriendo…' : 'Volver a borrador'}
+                            </button>
+                          )}
                           <button onClick={() => setSelectedSessionId(null)} disabled={!selectedSessionId}>
                             Cerrar detalle
                           </button>
                         </div>
                       </div>
                       <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
-                        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                          <div>
-                            <div style={{ opacity: 0.75, fontSize: 12 }}>Estado</div>
-                            <div>{toSpanishStatus(selectedSession.status)}</div>
-                          </div>
-                          <div>
-                            <div style={{ opacity: 0.75, fontSize: 12 }}>Aprobación</div>
-                            <div>{toSpanishStatus(selectedSession.approval_status)}</div>
-                          </div>
-                          <div>
-                            <div style={{ opacity: 0.75, fontSize: 12 }}>Jugada</div>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                              <input
-                                type="checkbox"
-                                checked={!!selectedSession.played}
-                                onChange={(e) => {
-                                  const checked = e.target.checked
-                                  setSessions((prev) =>
-                                    prev
-                                      ? prev.map((item) =>
-                                          item.id === selectedSession.id ? { ...item, played: checked } : item,
-                                        )
-                                      : prev,
-                                  )
-                                  void api
-                                    .patchSession(selectedSession.id, { played: checked })
-                                    .then((updated) => {
-                                      setSessions((prev) =>
-                                        prev
-                                          ? prev.map((item) => (item.id === updated.id ? updated : item))
-                                          : prev,
-                                      )
-                                    })
-                                    .catch((err) => setSessionsError(formatError(err)))
-                                }}
-                              />
-                              {selectedSession.played ? 'Sí' : 'No'}
-                            </label>
-                          </div>
-                          <div>
-                            <div style={{ opacity: 0.75, fontSize: 12 }}>Fecha prevista</div>
-                            <div>{formatPlannedDate(selectedSession.notes)}</div>
-                          </div>
+                        <div>
+                          <div style={{ opacity: 0.75, fontSize: 12 }}>Aprobación</div>
+                          <div>{toSpanishStatus(selectedSession.approval_status)}</div>
                         </div>
                         <div>
                           <div style={{ opacity: 0.75, fontSize: 12 }}>Resumen</div>
-                          <div>
-                            {selectedSession.summary ? renderMarkdownLite(selectedSession.summary) : <span style={{ opacity: 0.75 }}>(vacío)</span>}
-                          </div>
+                          {selectedSession.approval_status === 'approved' ? (
+                            <div>
+                              {selectedSession.summary ? (
+                                renderMarkdownLite(selectedSession.summary)
+                              ) : (
+                                <span style={{ opacity: 0.75 }}>(vacío)</span>
+                              )}
+                            </div>
+                          ) : (
+                            <>
+                              <div style={{ opacity: 0.8, fontSize: 12, marginBottom: 6 }}>
+                                Planificación de la sesión (Markdown). Pulsa «Guardar resumen» para persistirlo.
+                              </div>
+                              <textarea
+                                rows={8}
+                                value={sessionSummaryEditor}
+                                onChange={(e) => setSessionSummaryEditor(e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  marginTop: 4,
+                                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                                  fontSize: 13,
+                                }}
+                                disabled={sessionSummarySaving}
+                                placeholder="Resumen de la sesión en Markdown…"
+                              />
+                              <div style={{ marginTop: 8 }}>
+                                <button
+                                  onClick={() => void onSaveSessionSummary()}
+                                  disabled={sessionSummarySaving}
+                                >
+                                  {sessionSummarySaving ? 'Guardando…' : 'Guardar resumen'}
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                         <div>
-                          <div style={{ opacity: 0.75, fontSize: 12 }}>Notas</div>
-                          <div style={{ whiteSpace: 'pre-wrap' }}>
-                            {selectedSession.notes ?? <span style={{ opacity: 0.75 }}>(vacío)</span>}
+                          <div style={{ opacity: 0.75, fontSize: 12 }}>
+                            {selectedSession.approval_status === 'approved' ? 'Contenido aprobado' : 'Contenido (borrador)'}
                           </div>
-                        </div>
-                        <div>
-                          <div style={{ opacity: 0.75, fontSize: 12 }}>Contenido draft</div>
                           <div style={{ opacity: 0.8, fontSize: 12, marginBottom: 6 }}>
-                            Texto editable (como el resumen de campaña).
+                            {selectedSession.approval_status === 'approved'
+                              ? 'Solo lectura.'
+                              : !(selectedSession.content_draft ?? '').trim()
+                                ? 'Escribe el guion de la sesión aquí (Markdown) y guarda. Puedes apoyarte en el resumen de arriba.'
+                                : 'Texto editable (como el resumen de campaña).'}
                           </div>
                           <div>{renderMarkdownLite(sessionDraftEditor)}</div>
-                          <textarea
-                            rows={12}
-                            value={sessionDraftEditor}
-                            onChange={(e) => setSessionDraftEditor(e.target.value)}
-                            style={{ width: '100%', marginTop: 8 }}
-                            disabled={sessionDraftSaving}
-                          />
-                          <div style={{ marginTop: 8 }}>
-                            <button onClick={() => void onSaveSessionDraft()} disabled={sessionDraftSaving}>
-                              {sessionDraftSaving ? 'Guardando…' : 'Guardar contenido draft'}
-                            </button>
-                          </div>
+                          {selectedSession.approval_status !== 'approved' ? (
+                            <>
+                              <textarea
+                                rows={12}
+                                value={sessionDraftEditor}
+                                onChange={(e) => setSessionDraftEditor(e.target.value)}
+                                style={{ width: '100%', marginTop: 8 }}
+                                disabled={sessionDraftSaving}
+                              />
+                              <div style={{ marginTop: 8 }}>
+                                <button onClick={() => void onSaveSessionDraft()} disabled={sessionDraftSaving}>
+                                  {sessionDraftSaving ? 'Guardando…' : 'Guardar contenido draft'}
+                                </button>
+                              </div>
+                            </>
+                          ) : null}
                         </div>
                       </div>
                     </div>

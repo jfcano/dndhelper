@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 import pytest
 
 
@@ -96,7 +94,6 @@ def test_outline_approve_and_generate_sessions(client, monkeypatch: pytest.Monke
             "session_number": 1,
             "title": "Sesión 1",
             "summary": "S1",
-            "content_draft": {"opening_scene": "inicio", "objectives": ["x"], "scenes": []},
         }
     ]
     monkeypatch.setattr(generation_service, "generate_sessions", lambda *args, **kwargs: SESSIONS)
@@ -129,18 +126,16 @@ def test_outline_approve_and_generate_sessions(client, monkeypatch: pytest.Monke
     assert s["approval_status"] == "draft"
     assert s["status"] == "planned"
     assert s["session_number"] == 1
-    assert isinstance(s["content_draft"], str)
-
-    # content_draft debe ser JSON string serializado desde dict devuelto por el mock
-    parsed = json.loads(s["content_draft"])
-    assert parsed["opening_scene"] == "inicio"
+    assert s["summary"] == "S1"
+    assert s["content_draft"] is None
 
     sid = s["id"]
     r = client.post(f"/api/sessions/{sid}/approve", json={})
     assert r.status_code == 200
     body = r.json()
     assert body["approval_status"] == "approved"
-    assert body["content_final"] == body["content_draft"]
+    assert body["content_final"] is None
+    assert body["content_draft"] is None
 
 
 def test_sessions_generate_requires_outline_approved(client, monkeypatch: pytest.MonkeyPatch) -> None:

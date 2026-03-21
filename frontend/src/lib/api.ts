@@ -42,11 +42,9 @@ export type Session = {
   title: string
   summary: string | null
   status: string
-  notes: string | null
   content_draft: string | null
   content_final: string | null
   approval_status: string
-  played: boolean
   created_at: string
   updated_at: string
 }
@@ -63,11 +61,8 @@ export type SessionUpdate = Partial<{
   title: string
   summary: string | null
   status: string
-  notes: string | null
   content_draft: string | null
   content_final: string | null
-  approval_status: string
-  played: boolean
 }>
 
 export type WorldCreate = { name?: string }
@@ -215,11 +210,70 @@ export const api = {
     request<Session[]>(
       `/api/campaigns/${campaignId}/sessions?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`,
     ),
+  /** Todas las sesiones del propietario (todas las campañas). `/all-sessions` evita colisión con `/sessions/{uuid}`. */
+  listSessions: (limit = 50, offset = 0) =>
+    request<Session[]>(
+      `/api/all-sessions?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`,
+    ),
   getSession: (sessionId: UUID) => request<Session>(`/api/sessions/${sessionId}`),
   patchSession: (sessionId: UUID, payload: SessionUpdate) =>
     request<Session>(`/api/sessions/${sessionId}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  approveSession: (sessionId: UUID) =>
+    request<Session>(`/api/sessions/${sessionId}/approve`, { method: 'POST', body: '{}' }),
+  /**
+   * Vuelve a borrador una sesión aprobada.
+   * Incluye trazas en consola (`[dndhelper session reopen]`) para depurar proxy/404/CORS.
+   */
+  reopenSession: async (sessionId: UUID) => {
+    const path = `/api/sessions/${sessionId}/reopen`
+    const tag = '[dndhelper session reopen]'
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0
+    const snap = (extra?: Record<string, unknown>) => ({
+      sessionId,
+      path,
+      absoluteUrl:
+        typeof window !== 'undefined' ? new URL(path, window.location.origin).href : path,
+      pageUrl: typeof window !== 'undefined' ? window.location.href : null,
+      elapsedMs: typeof performance !== 'undefined' ? Math.round(performance.now() - t0) : null,
+      ...extra,
+    })
+
+    console.info(`${tag} → fetch start`, snap())
+
+    let res: Response
+    try {
+      res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      })
+    } catch (e) {
+      console.error(`${tag} → fetch lanzó excepción (red/CORS/servidor caído)`, snap({ error: String(e) }))
+      throw new ApiError(
+        'No se pudo conectar con el backend (¿está levantado?).',
+        0,
+        e instanceof Error ? e.message : e,
+      )
+    }
+
+    const rawText = await res.text()
+    let parsedBody: unknown = rawText
+    try {
+      parsedBody = rawText ? JSON.parse(rawText) : null
+    } catch {
+      /* cuerpo no JSON */
+    }
+
+    console.info(`${tag} → respuesta HTTP`, snap({ status: res.status, statusText: res.statusText, ok: res.ok, body: parsedBody }))
+
+    if (!res.ok) {
+      console.error(`${tag} → error API`, snap({ status: res.status, body: parsedBody }))
+      throw new ApiError(`API ${res.status} ${res.statusText}`, res.status, parsedBody)
+    }
+
+    return parsedBody as Session
+  },
   deleteSession: (sessionId: UUID) => request<{ ok: boolean }>(`/api/sessions/${sessionId}`, { method: 'DELETE' }),
-  extendSession: (sessionId: UUID) => request<Session>(`/api/sessions/${sessionId}/extend`, { method: 'POST', body: '{}' }),
   generateSessionsForCampaign: (campaignId: UUID, sessionCount: number) =>
     request<Session[]>(
       `/api/campaigns/${campaignId}/sessions:generate?session_count=${encodeURIComponent(sessionCount)}`,

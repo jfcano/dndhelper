@@ -24,8 +24,9 @@ _FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 _ADMIN_UI_DIR = Path(__file__).resolve().parents[1] / "admin_ui"
 
 app.include_router(rag_router, prefix="/api")
-app.include_router(campaigns_router, prefix="/api")
+# Sesiones antes que campañas: rutas `/api/campaigns/.../sessions` viven aquí y deben resolverse sin ambigüedad.
 app.include_router(sessions_router, prefix="/api")
+app.include_router(campaigns_router, prefix="/api")
 app.include_router(worlds_router, prefix="/api")
 
 

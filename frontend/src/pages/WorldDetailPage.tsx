@@ -5,6 +5,7 @@ import type { Campaign, World } from '../lib/api'
 import { formatError } from '../lib/errors'
 import { toSpanishStatus } from '../lib/statusLabels'
 import { WorldCreationWizard } from '../components/WorldCreationWizard'
+import { TabBar, TabButton } from '../components/TabBar'
 
 function renderInlineBold(text: string): ReactNode {
   // Soporta **negritas** de forma simple y segura (sin HTML).
@@ -313,14 +314,14 @@ export function WorldDetailPage() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-            <button onClick={() => setTab('contenido')} disabled={tab === 'contenido'}>
+          <TabBar style={{ marginTop: 10 }}>
+            <TabButton active={tab === 'contenido'} onSelect={() => setTab('contenido')}>
               Contenido
-            </button>
-            <button onClick={() => setTab('campañas')} disabled={tab === 'campañas'}>
+            </TabButton>
+            <TabButton active={tab === 'campañas'} onSelect={() => setTab('campañas')}>
               Campañas
-            </button>
-          </div>
+            </TabButton>
+          </TabBar>
 
           {tab === 'contenido' && (
             <>

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -52,6 +53,24 @@ def _set_persisted_players(campaign: Campaign, players: list[dict]) -> None:
         campaign.brief_final = final
 
 
+def _coerce_session_summary_for_db(raw: Any) -> str | None:
+    """Normaliza el resumen de sesión devuelto por el LLM para guardarlo en BD (texto o JSON serializado)."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        t = raw.replace("\r\n", "\n").strip()
+        return t if t else None
+    if isinstance(raw, (dict, list)):
+        try:
+            t = json.dumps(raw, ensure_ascii=False)
+            return t.strip() if t.strip() else None
+        except (TypeError, ValueError):
+            t = str(raw).strip()
+            return t if t else None
+    t = str(raw).strip()
+    return t if t else None
+
+
 @router.post("", response_model=CampaignOut)
 def create(payload: CampaignCreate, db: Session = Depends(get_db)) -> CampaignOut:
     owner_id = get_owner_id()
@@ -81,6 +100,12 @@ def patch(campaign_id: UUID, payload: CampaignUpdate, db: Session = Depends(get_
     obj = crud.get_campaign(db, owner_id, campaign_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
+    data = payload.model_dump(exclude_unset=True)
+    if "name" in data and obj.brief_status == "approved" and str(data["name"]).strip() != str(obj.name).strip():
+        raise HTTPException(
+            status_code=409,
+            detail="No se puede cambiar el nombre de la campaña una vez aprobado el resumen inicial.",
+        )
     return crud.update_campaign(db, obj, payload)
 
 
@@ -370,6 +395,12 @@ def generate_sessions_for_campaign(
     if not story_text:
         raise HTTPException(status_code=400, detail="No hay story para generar sesiones.")
 
+    if (campaign.outline_status or "").strip().lower() != "approved" or not (campaign.outline_final or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="El outline debe estar aprobado antes de generar sesiones.",
+        )
+
     existing_sessions = crud.list_sessions_by_campaign(db, owner_id, campaign_id, limit=1000, offset=0)
     starting_session_number = max((s.session_number for s in existing_sessions), default=0) + 1
 
@@ -383,26 +414,20 @@ def generate_sessions_for_campaign(
     for idx, s in enumerate(sessions_raw):
         session_number = starting_session_number + idx
         title = str(s.get("title") or f"Sesión {session_number}")
-        summary = s.get("summary")
-        content = s.get("content_draft")
+        summary_str = _coerce_session_summary_for_db(s.get("summary"))
+        # Solo título + resumen al generar; el guion (`content_draft`) lo redacta el usuario en la UI.
         obj = crud.create_session(
             db,
             owner_id,
             campaign_id,
-            # `notes` se usa para "fecha prevista". Por defecto la dejamos vacía,
-            # y se rellenará cuando se extienda/refine la sesión.
-            SessionCreate(session_number=session_number, title=title, summary=summary, notes=None, status="planned"),
+            SessionCreate(
+                session_number=session_number,
+                title=title,
+                summary=summary_str or None,
+                notes=None,
+                status="planned",
+            ),
         )
-        # persistir detalle como draft
-        if isinstance(content, (dict, list)):
-            obj.content_draft = json.dumps(content, ensure_ascii=False)
-        elif content is not None:
-            obj.content_draft = str(content)
-        else:
-            obj.content_draft = json.dumps(s, ensure_ascii=False)
-        db.add(obj)
-        db.commit()
-        db.refresh(obj)
         created.append(obj)
 
     return created

@@ -88,6 +88,21 @@ def list_sessions_by_campaign(
     return list(db.execute(stmt).scalars().all())
 
 
+def list_sessions_for_owner(
+    db: Session, owner_id: UUID, *, limit: int = 50, offset: int = 0
+) -> list[CampaignSession]:
+    """Todas las sesiones del propietario (cualquier campaña), ordenadas por campaña y número de sesión."""
+    stmt = (
+        select(CampaignSession)
+        .join(Campaign, Campaign.id == CampaignSession.campaign_id)
+        .where(Campaign.owner_id == owner_id)
+        .order_by(Campaign.name.asc(), CampaignSession.session_number.asc(), CampaignSession.created_at.asc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
 def delete_sessions_by_campaign(db: Session, owner_id: UUID, campaign_id: UUID) -> None:
     if not get_campaign(db, owner_id, campaign_id):
         raise LookupError("Campaign no encontrada.")
@@ -109,6 +124,20 @@ def update_session(db: Session, obj: CampaignSession, payload: SessionUpdate) ->
     data = payload.model_dump(exclude_unset=True)
     for k, v in data.items():
         setattr(obj, k, v)
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+def reopen_session_to_draft(db: Session, obj: CampaignSession) -> CampaignSession:
+    """Pasa una sesión aprobada de vuelta a borrador (idempotente si ya no está aprobada)."""
+    if (obj.approval_status or "").strip().lower() != "approved":
+        return obj
+    if not (obj.content_draft or "").strip() and (obj.content_final or "").strip():
+        obj.content_draft = obj.content_final
+    obj.approval_status = "draft"
+    obj.content_final = None
     db.add(obj)
     db.commit()
     db.refresh(obj)

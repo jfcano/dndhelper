@@ -1,23 +1,22 @@
-A partir del resumen inicial (Markdown del story), genera sesiones MUY detalladas para un DM.
+A partir del resumen de campaña (Markdown del story), genera SOLO la planificación por sesión: títulos y resúmenes narrativos. Aún NO escribas el guion detallado para el DM (el DM lo redactará aparte a partir de este resumen).
+
 Quiero exactamente __SESSION_COUNT__ sesiones empezando por session_number=__STARTING_SESSION_NUMBER__.
+
 Input (story markdown):
 __STORY_MD__
 
-Salida requerida: JSON con esta estructura aproximada:
+Salida requerida: JSON con esta estructura (sin otros campos):
 {
   "sessions": [
     {
       "session_number": 1,
-      "title": "Título",
-      "summary": "Resumen breve en Markdown (2-4 parrafos).",
-      "content_draft": "Texto en Markdown para la sesion, con secciones y escenas dentro del texto."
+      "title": "Título evocador de la sesión",
+      "summary": "Resumen en Markdown (2-4 párrafos): qué ocurre, tono, objetivos dramáticos, NPCs o lugares clave, ganchos hacia la siguiente sesión. Debe bastar para que luego se redacte el guion completo."
     }
   ]
 }
 
-REQUISITOS PARA `content_draft`:
-- Debe ser Markdown legible para el DM.
-- Debe incluir secciones por escenas usando encabezados, por ejemplo:
-  - `## Escena 1: ...`
-  - `## Escena 2: ...`
-- Las escenas NO son entidades separadas ni JSON: son organizacion interna del texto.
+REQUISITOS:
+- NO incluyas `content_draft` ni guion por escenas en el JSON: solo `session_number`, `title` y `summary`.
+- Cada resumen debe ser sustancial y coherente con la historia de campaña.
+- Numeración `session_number` consecutiva desde __STARTING_SESSION_NUMBER__.

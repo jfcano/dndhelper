@@ -21,7 +21,8 @@ REQUISITOS OBLIGATORIOS
 1. Debe tener en cuenta las decisiones tomadas en el Brief de campaña
 2. La historia debe reflejar las facciones/ciudades/personajes del mundo usando el contenido del mundo.
 3. No inventes restricciones que no estén en el brief.
-4. Estructura recomendada (usa exactamente estos encabezados):
+4. El tema principal de la historia debe de tener en cuenta los añadidos en el Brief
+5. Estructura recomendada (usa exactamente estos encabezados):
    ## Historia completa
    ## Tensiones y conflictos
    ## Facciones implicadas
@@ -33,3 +34,4 @@ FORMATO
 - Usa listas con guiones `- ` cuando tengas varios ítems.
 - Respeta la legibilidad para edición manual.
 - La historia debe de ser larga para permitir generar sesiones y ganchos argumentales que cuelguen de la misma
+

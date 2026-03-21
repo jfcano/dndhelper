@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 import pytest
 
 
@@ -20,18 +18,8 @@ def test_e2e_campaign_from_brief_to_sessions(client, monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(generation_service, "generate_outline", lambda *args, **kwargs: _GO())
 
     SESSIONS = [
-        {
-            "session_number": 1,
-            "title": "Sesión 1",
-            "summary": "S1",
-            "content_draft": {"opening_scene": "inicio", "objectives": ["x"], "scenes": []},
-        },
-        {
-            "session_number": 2,
-            "title": "Sesión 2",
-            "summary": "S2",
-            "content_draft": {"opening_scene": "continúa", "objectives": ["y"], "scenes": []},
-        },
+        {"session_number": 1, "title": "Sesión 1", "summary": "S1"},
+        {"session_number": 2, "title": "Sesión 2", "summary": "S2"},
     ]
     monkeypatch.setattr(generation_service, "generate_sessions", lambda *args, **kwargs: SESSIONS)
 
@@ -76,16 +64,30 @@ def test_e2e_campaign_from_brief_to_sessions(client, monkeypatch: pytest.MonkeyP
     sessions = r.json()
     assert len(sessions) == 2
     assert sessions[0]["approval_status"] == "draft"
+    assert sessions[0]["content_draft"] is None
+    assert sessions[0]["summary"] == "S1"
 
-    # 6) Approve session #1
+    # 6) Guion manual (PATCH) y aprobar sesión #1
     sid1 = sessions[0]["id"]
-    content_draft_1 = sessions[0]["content_draft"]
+    r = client.patch(f"/api/sessions/{sid1}", json={"content_draft": "## Guion\nEscena 1."})
+    assert r.status_code == 200
+    assert r.json()["content_draft"] == "## Guion\nEscena 1."
+
     r = client.post(f"/api/sessions/{sid1}/approve", json={})
     assert r.status_code == 200
     body = r.json()
     assert body["approval_status"] == "approved"
-    assert body["content_final"] == content_draft_1
+    assert body["content_final"] == "## Guion\nEscena 1."
+    assert body["summary"] == "S1"
 
-    parsed = json.loads(body["content_final"])
-    assert parsed["opening_scene"] in ("inicio", "continúa")
+    r = client.post(f"/api/sessions/{sid1}/reopen", json={})
+    assert r.status_code == 200
+    reopened = r.json()
+    assert reopened["approval_status"] == "draft"
+    assert reopened["content_final"] is None
+    assert reopened["content_draft"] == "## Guion\nEscena 1."
+
+    r = client.patch(f"/api/sessions/{sid1}", json={"content_draft": "## Guion\nEditado."})
+    assert r.status_code == 200
+    assert r.json()["content_draft"] == "## Guion\nEditado."
 

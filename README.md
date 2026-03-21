@@ -111,6 +111,14 @@ python -m backend.scripts.ingest_pdfs --dir backend/data
 .venv\Scripts\uvicorn backend.app.main:app --reload
 ```
 
+Arranca **siempre desde la raíz del repo** (`dndhelper`) para que importe `backend.app.main`. Si un endpoint nuevo devuelve `404 Not Found`, reinicia uvicorn tras guardar cambios.
+
+En **PowerShell**, `curl` suele ser un alias de `Invoke-WebRequest`. Para probar la API como HTTP real usa:
+
+```powershell
+curl.exe -s "http://127.0.0.1:8000/api/all-sessions?limit=20&offset=0"
+```
+
 ### Tests automáticos
 
 Los tests usan un Postgres **aislado** (no el de dev). Define `POSTGRES_TEST_URL` y ejecuta:
@@ -150,7 +158,7 @@ Arranque (desarrollo):
 2. En otra terminal:
 
 ```bash
-cd frontend-app
+cd frontend
 npm install
 npm run dev
 ```
@@ -186,8 +194,10 @@ Flujo recomendado (con aprobación entre fases):
 
 4. **Sesiones**
    - `POST /api/campaigns/{campaign_id}/sessions:generate?session_count=3`
-   - `PATCH /api/sessions/{session_id}` (editar; incluye `content_draft`)
+   - `PATCH /api/sessions/{session_id}` (editar resumen y `content_draft`; bloqueado si ya está aprobada)
+   - `POST /api/sessions/{session_id}/extend` (generar/ampliar guion con IA)
    - `POST /api/sessions/{session_id}/approve`
+   - `POST /api/sessions/{session_id}/reopen` (vuelve a borrador una sesión aprobada)
 
 Notas:
 - El backend usa `LOCAL_OWNER_UUID` (MVP sin login) para aislar datos por propietario.
@@ -198,8 +208,12 @@ Notas:
 Endpoints:
 - `POST /api/campaigns/{campaign_id}/sessions:generate?session_count=3`
 - `GET /api/campaigns/{campaign_id}/sessions`
+- `GET /api/sessions` o `GET /api/all-sessions` (todas las sesiones del propietario; `limit` / `offset`). No uses `/api/sessions/list`: se confunde con `/api/sessions/{session_id}`.
 - `GET /api/sessions/{session_id}`
 - `PATCH /api/sessions/{session_id}`
+- `POST /api/sessions/{session_id}/extend`
+- `POST /api/sessions/{session_id}/approve`
+- `POST /api/sessions/{session_id}/reopen`
 - `DELETE /api/sessions/{session_id}`
 
 ### Probar una consulta (API)
