@@ -186,6 +186,78 @@ export type CampaignWizardAutogenerateResponse = {
   patch: Partial<CampaignWizardDraft>
 }
 
+export type RagRulesSource = {
+  source: unknown
+  page: unknown
+}
+
+export type RagRulesResponse = {
+  answer: string
+  sources: RagRulesSource[]
+}
+
+export type OwnerSettingsStatus = {
+  has_stored_openai_key: boolean
+  env_openai_key_configured: boolean
+}
+
+export type PdfEnqueueResponse = {
+  job_id: string
+  status: 'queued'
+  message: string
+  original_filename: string
+}
+
+export type IngestJobRow = {
+  id: string
+  original_filename: string
+  status: string
+  progress_percent: number
+  phase_label: string | null
+  outcome: string | null
+  message: string | null
+  error_detail: string | null
+  chunks_indexed: number | null
+  pdf_sha256: string | null
+  collection_name: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type IngestJobDeleteResult = {
+  action: 'deleted' | 'cancel_requested'
+  job_id: string
+}
+
+/** Sube un PDF para indexación RAG (multipart; no usar `request` JSON). Respuesta 202 Accepted. */
+export async function uploadRulesPdf(file: File): Promise<PdfEnqueueResponse> {
+  const formData = new FormData()
+  formData.append('file', file)
+  let res: Response
+  try {
+    res = await fetch('/api/upload_pdf', {
+      method: 'POST',
+      body: formData,
+    })
+  } catch (e) {
+    throw new ApiError(
+      'No se pudo conectar con el backend (¿está levantado?).',
+      0,
+      e instanceof Error ? e.message : e,
+    )
+  }
+  if (!res.ok) {
+    let body: unknown = null
+    try {
+      body = await res.json()
+    } catch {
+      body = await res.text().catch(() => null)
+    }
+    throw new ApiError(`API ${res.status} ${res.statusText}`, res.status, body)
+  }
+  return (await res.json()) as PdfEnqueueResponse
+}
+
 export class ApiError extends Error {
   status: number
   body: unknown
@@ -224,6 +296,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  queryRules: (question: string) =>
+    request<RagRulesResponse>(`/api/query_rules`, {
+      method: 'POST',
+      body: JSON.stringify({ question }),
+    }),
+
+  listRagIngestJobs: (limit = 50) =>
+    request<IngestJobRow[]>(`/api/ingest_jobs?limit=${encodeURIComponent(limit)}`),
+
+  deleteRagIngestJob: (jobId: string) =>
+    request<IngestJobDeleteResult>(`/api/ingest_jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }),
+
+  getOwnerSettings: () => request<OwnerSettingsStatus>('/api/settings'),
+
+  putOwnerOpenaiKey: (openai_api_key: string) =>
+    request<OwnerSettingsStatus>('/api/settings/openai', {
+      method: 'PUT',
+      body: JSON.stringify({ openai_api_key }),
+    }),
+
+  deleteOwnerOpenaiKey: () =>
+    request<OwnerSettingsStatus>('/api/settings/openai', {
+      method: 'DELETE',
+    }),
+
   // Campaigns
   listCampaigns: (limit = 50, offset = 0) =>
     request<Campaign[]>(`/api/campaigns?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`),

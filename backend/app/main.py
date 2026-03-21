@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from backend.app.api.rag import router as rag_router
 from backend.app.api.campaigns import router as campaigns_router
 from backend.app.api.sessions import router as sessions_router
+from backend.app.api.settings import router as settings_router
 from backend.app.api.worlds import router as worlds_router
 
 logging.basicConfig(
@@ -28,6 +29,7 @@ app.include_router(rag_router, prefix="/api")
 app.include_router(sessions_router, prefix="/api")
 app.include_router(campaigns_router, prefix="/api")
 app.include_router(worlds_router, prefix="/api")
+app.include_router(settings_router, prefix="/api")
 
 
 @app.get("/", response_class=HTMLResponse)

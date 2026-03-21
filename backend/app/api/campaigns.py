@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,11 +22,14 @@ from backend.app.schemas import (
     SessionCreate,
     SessionOut,
 )
+from backend.app.deps_openai import require_openai_api_key_ctx
 from backend.app.services import generation_service, world_image_service
 from backend.app.world_names import is_world_name_taken
 from sqlalchemy import func, select
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
+
+_OpenAIDep = Annotated[str, Depends(require_openai_api_key_ctx)]
 
 _PLAYERS_KEY = "__generated_players__"
 
@@ -153,8 +156,7 @@ def delete(
     return {"ok": True}
 
 
-@router.post("/{campaign_id}/brief", response_model=CampaignOut)
-def set_brief(campaign_id: UUID, payload: CampaignBrief, db: Session = Depends(get_db)) -> CampaignOut:
+def _run_set_brief_with_generation(campaign_id: UUID, payload: CampaignBrief, db: Session) -> CampaignOut:
     owner_id = get_owner_id()
     obj = crud.get_campaign(db, owner_id, campaign_id)
     if not obj:
@@ -196,8 +198,21 @@ def set_brief(campaign_id: UUID, payload: CampaignBrief, db: Session = Depends(g
     return obj
 
 
+@router.post("/{campaign_id}/brief", response_model=CampaignOut)
+def set_brief(
+    campaign_id: UUID,
+    payload: CampaignBrief,
+    _openai: _OpenAIDep,
+    db: Session = Depends(get_db),
+) -> CampaignOut:
+    return _run_set_brief_with_generation(campaign_id, payload, db)
+
+
 @router.post(":wizard/autogenerate")
-def autogenerate_campaign_wizard_step(payload: CampaignWizardAutogenerateRequest) -> dict:
+def autogenerate_campaign_wizard_step(
+    payload: CampaignWizardAutogenerateRequest,
+    _openai: _OpenAIDep,
+) -> dict:
     patch = generation_service.autogenerate_campaign_wizard_step(
         step=payload.step,
         wizard=payload.wizard.model_dump(),
@@ -206,13 +221,22 @@ def autogenerate_campaign_wizard_step(payload: CampaignWizardAutogenerateRequest
 
 
 @router.patch("/{campaign_id}/brief", response_model=CampaignOut)
-def patch_brief(campaign_id: UUID, payload: CampaignBrief, db: Session = Depends(get_db)) -> CampaignOut:
+def patch_brief(
+    campaign_id: UUID,
+    payload: CampaignBrief,
+    _openai: _OpenAIDep,
+    db: Session = Depends(get_db),
+) -> CampaignOut:
     # Reutilizamos el mismo schema; en MVP se envía completo.
-    return set_brief(campaign_id, payload, db)
+    return _run_set_brief_with_generation(campaign_id, payload, db)
 
 
 @router.post("/{campaign_id}/brief/approve", response_model=CampaignOut)
-def approve_brief(campaign_id: UUID, db: Session = Depends(get_db)) -> CampaignOut:
+def approve_brief(
+    campaign_id: UUID,
+    _openai: _OpenAIDep,
+    db: Session = Depends(get_db),
+) -> CampaignOut:
     owner_id = get_owner_id()
     obj = crud.get_campaign(db, owner_id, campaign_id)
     if not obj:
@@ -320,7 +344,11 @@ def reset_campaign_story(campaign_id: UUID, db: Session = Depends(get_db)) -> Ca
 
 
 @router.post("/{campaign_id}/world:generate", response_model=CampaignOut)
-def generate_world_for_campaign(campaign_id: UUID, db: Session = Depends(get_db)) -> CampaignOut:
+def generate_world_for_campaign(
+    campaign_id: UUID,
+    _openai: _OpenAIDep,
+    db: Session = Depends(get_db),
+) -> CampaignOut:
     owner_id = get_owner_id()
     campaign = crud.get_campaign(db, owner_id, campaign_id)
     if not campaign:
@@ -365,7 +393,11 @@ def generate_world_for_campaign(campaign_id: UUID, db: Session = Depends(get_db)
 
 
 @router.post("/{campaign_id}/outline:generate", response_model=CampaignOut)
-def generate_outline_for_campaign(campaign_id: UUID, db: Session = Depends(get_db)) -> CampaignOut:
+def generate_outline_for_campaign(
+    campaign_id: UUID,
+    _openai: _OpenAIDep,
+    db: Session = Depends(get_db),
+) -> CampaignOut:
     owner_id = get_owner_id()
     campaign = crud.get_campaign(db, owner_id, campaign_id)
     if not campaign:
@@ -401,7 +433,10 @@ def generate_outline_for_campaign(campaign_id: UUID, db: Session = Depends(get_d
 
 @router.post("/{campaign_id}/sessions:generate", response_model=list[SessionOut])
 def generate_sessions_for_campaign(
-    campaign_id: UUID, session_count: int = 3, db: Session = Depends(get_db)
+    campaign_id: UUID,
+    _openai: _OpenAIDep,
+    session_count: int = 3,
+    db: Session = Depends(get_db),
 ) -> list[SessionOut]:
     owner_id = get_owner_id()
     campaign = crud.get_campaign(db, owner_id, campaign_id)
@@ -457,7 +492,10 @@ def generate_sessions_for_campaign(
 
 @router.post("/{campaign_id}/players:generate")
 def generate_players_for_campaign(
-    campaign_id: UUID, player_count: int = 4, db: Session = Depends(get_db)
+    campaign_id: UUID,
+    _openai: _OpenAIDep,
+    player_count: int = 4,
+    db: Session = Depends(get_db),
 ) -> list[dict]:
     owner_id = get_owner_id()
     campaign = crud.get_campaign(db, owner_id, campaign_id)

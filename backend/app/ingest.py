@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import hashlib
 import json
+import logging
 from typing import Callable
 
 from langchain_community.document_loaders import PyPDFLoader
@@ -13,8 +14,14 @@ from tqdm import tqdm
 from backend.app.config import get_settings
 from backend.app.vector_store import get_vector_store
 
-# Tamaño de lote para indexar con barra de progreso (embeddings en CPU son lentos)
+logger = logging.getLogger(__name__)
+
+# Tamaño de lote para indexar (cada lote implica llamadas a la API de embeddings de OpenAI)
 _INGEST_BATCH_SIZE = 32
+
+
+class IngestCancelledError(Exception):
+    """El usuario canceló el trabajo (estado «cancelled» en BD); el worker debe limpiar y no finalizar como éxito."""
 
 
 @dataclass(frozen=True)
@@ -24,6 +31,7 @@ class IngestResult:
     chunks_indexed: int
     collection: str
     manifest_path: str
+    skipped_duplicate: bool = False
 
 
 def _sanitize_utf8(s: str) -> str:
@@ -68,24 +76,34 @@ def ingest_pdf(
     *,
     force: bool = False,
     show_progress: bool = True,
-    progress_callback: Callable[[str, int, int], None] | None = None,
+    progress_callback: Callable[[str, int, int], None] | None = None,  # phase: load|split|index|unchanged
+    cancel_check: Callable[[], bool] | None = None,
 ) -> IngestResult:
     """
-    Indexa un PDF en Postgres (pgvector) usando LangChain.
+    Indexa un PDF en Postgres (pgvector) con LangChain.
+    Los embeddings son siempre de **OpenAI** (`OpenAIEmbeddings`, modelo `OPENAI_EMBEDDINGS_MODEL` vía `get_embeddings`).
     show_progress: si True, usa tqdm en consola para la fase de indexación.
-    progress_callback(phase, current, total): opcional; phase in ("load", "split", "index").
+    progress_callback(phase, current, total): opcional; phase in ("load", "split", "index", "unchanged").
+    cancel_check: si devuelve True, se interrumpe la ingesta (levanta IngestCancelledError) entre fases/lotes.
     """
     settings = get_settings()
+
+    def _abort_if_cancelled() -> None:
+        if cancel_check and cancel_check():
+            raise IngestCancelledError()
 
     pdf = Path(pdf_path)
     if not pdf.exists():
         raise FileNotFoundError(f"No existe el PDF: {pdf}")
+    _abort_if_cancelled()
 
     pdf_sha = _sha256_file(pdf)
     manifest = _load_manifest(settings.project_root)
     key = f"{settings.default_collection}:{str(pdf.resolve())}"
 
     if not force and manifest.get(key, {}).get("pdf_sha256") == pdf_sha:
+        if progress_callback:
+            progress_callback("unchanged", 1, 1)
         mp = _manifest_path(settings.project_root)
         return IngestResult(
             pdf_path=str(pdf),
@@ -93,7 +111,10 @@ def ingest_pdf(
             chunks_indexed=0,
             collection=settings.default_collection,
             manifest_path=str(mp),
+            skipped_duplicate=True,
         )
+
+    _abort_if_cancelled()
 
     def _report(phase: str, current: int, total: int) -> None:
         if progress_callback:
@@ -102,6 +123,7 @@ def ingest_pdf(
     # Fase 1: cargar PDF
     if show_progress:
         tqdm.write(f"Cargando PDF: {pdf.name}")
+    _abort_if_cancelled()
     loader = PyPDFLoader(str(pdf))
     docs = loader.load()
     _report("load", len(docs), len(docs))
@@ -138,6 +160,8 @@ def ingest_pdf(
         d.metadata = d.metadata or {}
         d.metadata.setdefault("source", str(pdf))
 
+    _abort_if_cancelled()
+
     vs = get_vector_store()
     # Si re-ingestamos, limpiamos la colección para no duplicar
     if force or manifest.get(key):
@@ -147,9 +171,18 @@ def ingest_pdf(
             pass
         vs = get_vector_store()
 
-    # Fase 3: indexar en lotes con barra de progreso (lo más lento en CPU)
+    # Fase 3: indexar en lotes (embeddings vía OpenAIEmbeddings → API OpenAI, ver get_embeddings)
+    if not chunks:
+        _report("index", 0, 0)
+    if chunks:
+        logger.info(
+            "Ingesta RAG: embeddings OpenAI (modelo=%s, colección=%s, chunks=%d)",
+            settings.openai_embeddings_model,
+            settings.default_collection,
+            len(chunks),
+        )
     if show_progress:
-        tqdm.write("Indexando embeddings (puede tardar varios minutos en CPU)...")
+        tqdm.write("Indexando embeddings (OpenAI API; puede tardar según tamaño y red)...")
     batch_size = _INGEST_BATCH_SIZE
     for start in tqdm(
         range(0, len(chunks), batch_size),
@@ -158,6 +191,7 @@ def ingest_pdf(
         unit="lote",
         disable=not show_progress,
     ):
+        _abort_if_cancelled()
         batch = chunks[start : start + batch_size]
         vs.add_documents(batch)
         _report("index", min(start + len(batch), len(chunks)), len(chunks))
@@ -177,5 +211,6 @@ def ingest_pdf(
         chunks_indexed=len(chunks),
         collection=settings.default_collection,
         manifest_path=str(mp),
+        skipped_duplicate=False,
     )
 

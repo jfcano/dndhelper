@@ -78,6 +78,49 @@ class Campaign(Base):
     )
 
 
+class OwnerSettings(Base):
+    """Preferencias por propietario (MVP: UUID local sin tabla de usuarios)."""
+
+    __tablename__ = "owner_settings"
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    openai_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class IngestJob(Base):
+    """Trabajo de indexación RAG de un PDF (procesado por un worker aparte)."""
+
+    __tablename__ = "ingest_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    original_filename: Mapped[str] = mapped_column(Text, nullable=False)
+    stored_path: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued", server_default="queued")
+    progress_percent: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    phase_label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chunks_indexed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pdf_sha256: Mapped[str | None] = mapped_column(Text, nullable=True)
+    collection_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class Session(Base):
     __tablename__ = "sessions"
 

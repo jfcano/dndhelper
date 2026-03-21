@@ -191,3 +191,51 @@ class SessionOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+class OwnerSettingsOut(BaseModel):
+    """Estado de la clave OpenAI (nunca se devuelve el secreto)."""
+
+    has_stored_openai_key: bool
+    env_openai_key_configured: bool
+
+
+class OwnerSettingsOpenAIUpdate(BaseModel):
+    openai_api_key: str = Field(
+        min_length=8,
+        description="Clave de API de OpenAI (sk-...).",
+    )
+
+
+class IngestJobOut(BaseModel):
+    """Estado de un trabajo de indexación RAG (sin datos sensibles del PDF)."""
+
+    id: UUID
+    original_filename: str
+    status: str
+    progress_percent: int
+    phase_label: str | None
+    outcome: str | None
+    message: str | None
+    error_detail: str | None
+    chunks_indexed: int | None
+    pdf_sha256: str | None
+    collection_name: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PdfEnqueueResponse(BaseModel):
+    job_id: UUID
+    status: Literal["queued"] = "queued"
+    message: str
+    original_filename: str
+
+
+class IngestJobDeleteResponse(BaseModel):
+    """Resultado de cancelar o borrar un trabajo de ingesta."""
+
+    action: Literal["deleted", "cancel_requested"]
+    job_id: UUID
+

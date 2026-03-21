@@ -47,6 +47,8 @@ def _setup_test_db() -> Generator[None, None, None]:
         conn.execute(text("DROP TABLE IF EXISTS sessions CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS campaigns CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS worlds CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS owner_settings CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS ingest_jobs CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS arcs CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE"))
 
@@ -88,6 +90,18 @@ def _clean_tables() -> Generator[None, None, None]:
             text(
                 "DO $$ BEGIN IF to_regclass('public.worlds') IS NOT NULL THEN "
                 "TRUNCATE TABLE worlds RESTART IDENTITY CASCADE; END IF; END $$;"
+            )
+        )
+        conn.execute(
+            text(
+                "DO $$ BEGIN IF to_regclass('public.owner_settings') IS NOT NULL THEN "
+                "TRUNCATE TABLE owner_settings; END IF; END $$;"
+            )
+        )
+        conn.execute(
+            text(
+                "DO $$ BEGIN IF to_regclass('public.ingest_jobs') IS NOT NULL THEN "
+                "TRUNCATE TABLE ingest_jobs; END IF; END $$;"
             )
         )
     yield

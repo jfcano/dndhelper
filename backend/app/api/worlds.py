@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.db import get_db
+from backend.app.deps_openai import require_openai_api_key_ctx
 from backend.app.models import Campaign, World
 from backend.app.owner_context import get_owner_id
 from backend.app.schemas import (
@@ -28,6 +30,8 @@ _SAFE_IMAGE_FILE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*\.png$")
 
 router = APIRouter(prefix="/worlds", tags=["worlds"])
 
+_OpenAIDep = Annotated[str, Depends(require_openai_api_key_ctx)]
+
 
 @router.post("", response_model=WorldOut)
 def create_world(payload: WorldCreate, db: Session = Depends(get_db)) -> WorldOut:
@@ -45,7 +49,11 @@ def create_world(payload: WorldCreate, db: Session = Depends(get_db)) -> WorldOu
 
 
 @router.post(":generate", response_model=WorldOut)
-def generate_world(payload: WorldGenerate, db: Session = Depends(get_db)) -> WorldOut:
+def generate_world(
+    payload: WorldGenerate,
+    _openai: _OpenAIDep,
+    db: Session = Depends(get_db),
+) -> WorldOut:
     owner_id = get_owner_id()
     faction_names = {f.name.strip().lower() for f in payload.factions}
     missing = sorted(
@@ -104,6 +112,7 @@ def generate_world(payload: WorldGenerate, db: Session = Depends(get_db)) -> Wor
 def generate_world_for_existing_world(
     world_id: UUID,
     payload: WorldGenerate,
+    _openai: _OpenAIDep,
     db: Session = Depends(get_db),
 ) -> WorldOut:
     owner_id = get_owner_id()
@@ -172,6 +181,7 @@ def generate_world_for_existing_world(
 def generate_one_world_visual(
     world_id: UUID,
     payload: WorldVisualGenerateRequest,
+    _openai: _OpenAIDep,
     db: Session = Depends(get_db),
 ) -> WorldOut:
     owner_id = get_owner_id()
@@ -199,7 +209,10 @@ def generate_one_world_visual(
 
 
 @router.post(":wizard/autogenerate")
-def autogenerate_world_wizard_step(payload: WorldWizardAutogenerateRequest) -> dict:
+def autogenerate_world_wizard_step(
+    payload: WorldWizardAutogenerateRequest,
+    _openai: _OpenAIDep,
+) -> dict:
     patch = generation_service.autogenerate_world_wizard_step(
         step=payload.step,
         wizard=payload.wizard.model_dump(),

@@ -55,15 +55,37 @@
   flex-wrap: wrap;
 }
 
-/* Fila 2: menú principal debajo, alineado a la izquierda (frente al conmutador arriba a la derecha) */
+/* Fila 2: menú principal a la izquierda; Ajustes a la derecha */
 .topbar-row--nav {
   display: flex;
-  justify-content: flex-start;
+  justify-content: space-between;
   align-items: center;
+  gap: 12px 20px;
+  flex-wrap: wrap;
   width: 100%;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--border-subtle);
+}
+
+.nav--settings {
+  margin-left: auto;
+}
+
+.nav .nav-sep {
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 1px;
+  min-height: 1.35rem;
+  margin: 6px 4px 6px 12px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--border-subtle) 15%,
+    var(--topbar-line-gold) 50%,
+    var(--border-subtle) 85%,
+    transparent 100%
+  );
 }
 
 .brand-wrap {

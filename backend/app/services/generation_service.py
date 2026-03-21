@@ -7,6 +7,7 @@ from typing import Any
 from langchain_openai import ChatOpenAI
 
 from backend.app.config import get_settings
+from backend.app.openai_key_runtime import get_openai_key_for_llm_and_embeddings
 from backend.app.prompts.loader import render_prompt_template
 from backend.app.services.rag_service import answer_question
 from backend.app.prompts.campaign_generation import (
@@ -330,9 +331,8 @@ def _merge_world_content_with_wizard_input(
 
 def _get_llm() -> ChatOpenAI:
     settings = get_settings()
-    if not settings.openai_api_key:
-        raise RuntimeError("Falta OPENAI_API_KEY en el entorno.")
-    return ChatOpenAI(model=settings.openai_model, api_key=settings.openai_api_key, temperature=0.7)
+    api_key = get_openai_key_for_llm_and_embeddings()
+    return ChatOpenAI(model=settings.openai_model, api_key=api_key, temperature=0.7)
 
 
 def _parse_json(text: str) -> dict[str, Any]:

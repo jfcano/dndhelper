@@ -16,10 +16,11 @@ El proyecto está pensado como **MVP multiplataforma** (Windows y Linux): backen
 6. [Base de datos y migraciones](#base-de-datos-y-migraciones)
 7. [Ingesta de PDFs (RAG)](#ingesta-de-pdfs-rag)
 8. [Ejecución](#ejecución)
-9. [Estructura del proyecto](#estructura-del-proyecto)
-10. [Funcionalidades principales](#funcionalidades-principales)
-11. [Tests](#tests)
-12. [API y referencia rápida](#api-y-referencia-rápida)
+9. [Docker Compose](#docker-compose)
+10. [Estructura del proyecto](#estructura-del-proyecto)
+11. [Funcionalidades principales](#funcionalidades-principales)
+12. [Tests](#tests)
+13. [API y referencia rápida](#api-y-referencia-rápida)
 
 ---
 
@@ -100,8 +101,8 @@ Copia `.env.example` a `.env` y completa al menos:
 | Variable | Descripción |
 |----------|-------------|
 | `POSTGRES_URL` | Cadena SQLAlchemy, p. ej. `postgresql+psycopg://usuario:password@localhost:5432/nombre_bd` |
-| `OPENAI_API_KEY` | Clave para chat y embeddings |
-| `LOCAL_OWNER_UUID` | UUID del “propietario” local (MVP sin login) |
+| `OPENAI_API_KEY` | Respaldo global (chat, embeddings, imágenes). Si en **Ajustes** guardas una clave para tu `LOCAL_OWNER_UUID`, esa tiene **prioridad** en la API. Sin ninguna de las dos, las rutas de IA responden 400 pidiendo configurar la clave. |
+| `LOCAL_OWNER_UUID` | UUID del “propietario” local (MVP sin login); también determina la fila en `owner_settings` donde se guarda la clave desde la UI. |
 
 Opcionales frecuentes:
 
@@ -181,6 +182,14 @@ uvicorn backend.app.main:app --reload
 
 Por defecto la API queda en **http://127.0.0.1:8000**.
 
+Para que la **subida de manuales** (RAG) avance desde la UI, arranca además el worker de cola (otra terminal, misma raíz del repo y mismo `.env`):
+
+```bash
+python -m backend.scripts.ingest_worker
+```
+
+Al **arrancar**, el worker pasa de nuevo a «En cola» los trabajos que quedaron en «Procesando» (reinicio o corte), para reintentar la indexación.
+
 - **Salud:** `GET http://127.0.0.1:8000/health`
 - **Documentación interactiva:** `http://127.0.0.1:8000/docs` (OpenAPI/Swagger de FastAPI)
 - **Página servida en `/`:** `frontend/index.html` (entrada HTML de la app React; en producción conviene servir el **build** de Vite o seguir usando el dev server con proxy)
@@ -209,11 +218,45 @@ curl.exe -s -X POST http://127.0.0.1:8000/api/query_rules `
 
 ---
 
+## Docker Compose
+
+Despliegue con **cuatro servicios**: Postgres (**pgvector**), API FastAPI, **worker de ingesta RAG** (`ingest-worker`, mismo código que el backend) y frontend estático (**Nginx**) que enruta `/api` y `/admin` al backend (mismo comportamiento que el proxy de Vite en desarrollo).
+
+**Requisitos:** [Docker](https://docs.docker.com/get-docker/) y Docker Compose v2.
+
+1. Copia `.env.example` a `.env` y completa al menos **`OPENAI_API_KEY`** (y el resto de variables que uses). El fichero **`.env`** debe existir para que Compose pueda cargarlo en los servicios `backend` e `ingest-worker`.
+2. **`POSTGRES_URL` dentro del contenedor** la fija `docker-compose.yml` apuntando al servicio `db` (`dndhelper` / `dndhelper` / base `dndhelper`). La variable de tu `.env` para Postgres **se sustituye** en Compose al arrancar el backend y el worker.
+3. Construcción y arranque:
+
+```bash
+docker compose up -d --build
+```
+
+4. Aplicar migraciones (una vez la base está arriba):
+
+```bash
+docker compose run --rm backend alembic upgrade head
+```
+
+5. **URLs habituales**
+   - App React (vía Nginx): **http://localhost:80** (si el puerto 80 está ocupado o requiere permisos elevados en tu sistema, cambia en `docker-compose.yml` el mapeo del servicio `frontend`, p. ej. `8080:80`).
+   - API directa (opcional): **http://localhost:8000** (`/docs`, `/health`).
+   - Postgres en el host: **localhost:5432** (usuario/contraseña/base `dndhelper`).
+
+Los PDFs para RAG pueden dejarse en **`backend/data/`** en el host: el compose monta esa carpeta en el contenedor del backend **y** del worker (subidas desde la UI y manifiestos de ingesta). Las **imágenes de mundos** (y el resto de ficheros bajo `backend/storage/`, p. ej. `world_images/`) también se persisten mediante el volumen **`./backend/storage` → `/app/backend/storage`**.
+
+La subida desde **Manuales** encola un trabajo en BD; el proceso **`ingest-worker`** (`python -m backend.scripts.ingest_worker`) lo toma y actualiza el porcentaje de progreso. Sin ese servicio (o sin ejecutar el worker en local), los trabajos quedarán en «En cola». Cada vez que el worker **arranca**, recupera trabajos que hubieran quedado en «Procesando» y los vuelve a encolar.
+
+La imagen del backend es **grande** (PyTorch / `sentence-transformers`). En Compose se fuerza **`EMBEDDINGS_DEVICE=cpu`**; para GPU haría falta configurar el runtime de NVIDIA y una imagen base distinta.
+
+---
+
 ## Estructura del proyecto
 
 ```text
 dndhelper/
 ├── .env.example              # Plantilla de variables de entorno
+├── docker-compose.yml        # Postgres + backend + ingest-worker + frontend (Nginx)
 ├── alembic.ini               # Configuración de Alembic
 ├── alembic/                  # Migraciones SQL (versiones en versions/)
 ├── requirements.txt          # Dependencias Python
@@ -221,6 +264,7 @@ dndhelper/
 │   ├── test.ps1              # Tests (Windows)
 │   └── test.sh               # Tests (Unix)
 ├── backend/
+│   ├── Dockerfile            # Imagen de la API (contexto de build: raíz del repo)
 │   ├── app/
 │   │   ├── main.py           # FastAPI: rutas, montaje de routers, /, /admin, /health
 │   │   ├── config.py         # Settings desde entorno
@@ -238,9 +282,11 @@ dndhelper/
 │   ├── admin_ui/             # UI estática bajo /admin
 │   ├── data/                 # PDFs para indexar (no versionar contenido propietario)
 │   ├── prompt_templates/     # Plantillas de texto (RAG, campaña, sesiones, imágenes, …)
-│   ├── scripts/              # ingest_pdf, ingest_pdfs
+│   ├── scripts/              # ingest_pdf, ingest_pdfs, ingest_worker (cola RAG)
 │   └── storage/              # Metadatos locales de ingesta (p. ej. manifiestos)
 └── frontend/
+    ├── Dockerfile            # Build Vite + Nginx (proxy /api y /admin → backend)
+    ├── nginx.docker.conf     # Configuración Nginx del contenedor frontend
     ├── index.html            # Shell de la SPA
     ├── vite.config.ts        # Dev: proxy /api → http://127.0.0.1:8000
     ├── package.json
@@ -280,7 +326,7 @@ dndhelper/
 
 ### Interfaz de usuario
 
-- **React**: flujo principal en `/campaigns`, `/worlds`, etc. (ver `frontend/src/main.tsx`).
+- **React**: flujo principal en `/campaigns`, `/worlds`, `/rules` (consultas RAG), `/manuals` (subida de PDFs al índice), **Ajustes** en `/settings` (clave OpenAI), etc. (ver `frontend/src/main.tsx`).
 - **Admin** en `/admin`: interfaz mínima servida por FastAPI.
 
 ### Aislamiento por propietario
@@ -311,9 +357,17 @@ export POSTGRES_TEST_URL="postgresql+psycopg://user:pass@host:5432/db_test"
 
 ## API y referencia rápida
 
+### Ajustes (clave OpenAI por propietario)
+
+- `GET /api/settings` — estado (`has_stored_openai_key`, `env_openai_key_configured`; no se devuelve el secreto).
+- `PUT /api/settings/openai` — cuerpo `{"openai_api_key": "sk-..."}`; persiste para `LOCAL_OWNER_UUID`.
+- `DELETE /api/settings/openai` — borra la clave guardada en BD (sigue pudiendo usarse `OPENAI_API_KEY` del entorno si existe).
+
 ### RAG
 
 - `POST /api/query_rules` — Pregunta sobre PDFs indexados.
+- `POST /api/upload_pdf` — Subida multipart (`file`) de un PDF; lo guarda en `backend/data/uploads/<LOCAL_OWNER_UUID>/` con nombre único por trabajo, crea una fila en `ingest_jobs` y responde **202** con `job_id` (la indexación la hace el worker; requiere clave OpenAI en el momento de la subida).
+- `GET /api/ingest_jobs?limit=50` — Lista de trabajos del propietario: `status` (`queued` | `processing` | `done` | `failed`), `progress_percent`, `phase_label`, y al terminar `outcome` (`indexed` | `unchanged` | `empty`), `message`, metadatos.
 
 ### Campañas (extracto)
 

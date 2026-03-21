@@ -14,6 +14,7 @@ from uuid import UUID
 import httpx
 
 from backend.app.config import get_settings
+from backend.app.openai_key_runtime import get_openai_key_for_llm_and_embeddings
 from backend.app.prompts.loader import render_prompt_template
 
 logger = logging.getLogger(__name__)
@@ -41,13 +42,18 @@ def clear_world_images_dir(world_id: UUID) -> None:
 
 def images_generation_allowed() -> bool:
     s = get_settings()
-    return bool(s.world_image_generation_enabled and s.openai_api_key)
+    if not s.world_image_generation_enabled:
+        return False
+    try:
+        get_openai_key_for_llm_and_embeddings()
+    except RuntimeError:
+        return False
+    return True
 
 
 def _generate_image_png_bytes(*, prompt: str) -> bytes:
     settings = get_settings()
-    if not settings.openai_api_key:
-        raise RuntimeError("Falta OPENAI_API_KEY")
+    api_key = get_openai_key_for_llm_and_embeddings()
     url = "https://api.openai.com/v1/images/generations"
     body: dict[str, Any] = {
         "model": settings.openai_image_model,
@@ -62,7 +68,7 @@ def _generate_image_png_bytes(*, prompt: str) -> bytes:
         r = client.post(
             url,
             headers={
-                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             json=body,

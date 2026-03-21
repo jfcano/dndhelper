@@ -34,6 +34,22 @@
   border-radius: 10px;
 }
 
+.success-banner {
+  color: var(--success);
+  padding: 0.65rem 1rem;
+  background: rgba(156, 184, 140, 0.14);
+  border: 1px solid rgba(156, 184, 140, 0.4);
+  border-radius: 10px;
+}
+
+.warn-banner {
+  color: var(--gold-bright);
+  padding: 0.65rem 1rem;
+  background: rgba(201, 162, 39, 0.1);
+  border: 1px solid var(--border-accent);
+  border-radius: 10px;
+}
+
 .table-shell {
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
@@ -92,4 +108,16 @@ html[data-theme='light'] .card-panel {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.rag-query-form {
+  display: grid;
+  gap: 10px;
+}
+
+.rag-query-form textarea {
+  width: 100%;
+  min-height: 100px;
+  resize: vertical;
+  box-sizing: border-box;
 }

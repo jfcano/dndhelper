@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import './layout.css'
 import { HeaderOrnaments } from './HeaderOrnaments'
-import { IconGlobe, IconMoon, IconScroll, IconSun } from './icons'
+import { IconBook, IconCog, IconGlobe, IconMoon, IconScroll, IconSun, IconUploadDoc } from './icons'
 import { applyThemeToDocument, readStoredTheme, type ThemeId } from '../lib/theme'
 
 export function Layout() {
@@ -50,6 +50,29 @@ export function Layout() {
               <NavLink to="/campaigns" className={({ isActive }) => (isActive ? 'active' : undefined)}>
                 <IconScroll className="nav-icon" />
                 Campañas
+              </NavLink>
+              <span className="nav-sep" role="separator" aria-hidden="true" />
+              <NavLink
+                to="/rules"
+                className={({ isActive }) => (isActive ? 'active' : undefined)}
+                title="Consultas RAG sobre PDFs de reglas"
+              >
+                <IconBook className="nav-icon" />
+                Reglas
+              </NavLink>
+              <NavLink
+                to="/manuals"
+                className={({ isActive }) => (isActive ? 'active' : undefined)}
+                title="Subir manuales en PDF para el índice RAG"
+              >
+                <IconUploadDoc className="nav-icon" />
+                Manuales
+              </NavLink>
+            </nav>
+            <nav className="nav nav--settings" aria-label="Configuración">
+              <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : undefined)} title="Clave API OpenAI">
+                <IconCog className="nav-icon" />
+                Ajustes
               </NavLink>
             </nav>
           </div>
