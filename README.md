@@ -69,6 +69,19 @@ La tabla `campaigns` se gestiona con **Alembic**.
 alembic upgrade head
 ```
 
+### Columna `visual_assets` (mapas / emblemas / retratos de mundos)
+
+Tras actualizar el código, aplica en Postgres el script SQL (o equivalente), o `alembic upgrade head` si incluye la migración de `visual_assets`.
+
+Al **generar un mundo**, la API guarda una **plantilla** con todos los huecos (mapa mundial, mapas locales, emblemas, retratos). Las imágenes **no** se generan solas: en la pestaña **Imágenes** del mundo el usuario pulsa **Generar** en cada una cuando quiera (endpoint `POST /api/worlds/{id}/visual:generate`).
+
+Variables opcionales en `.env`:
+
+- `OPENAI_IMAGE_MODEL` (por defecto `dall-e-3`): modelo de imágenes de OpenAI.
+- `WORLD_IMAGE_GENERATION=false`: impide llamar a la API de imágenes (los botones fallarán con un error claro).
+
+Los **prompts de generación de imágenes** (mapa mundial, ciudad/región, emblema, retrato PJ/NPC) están en `backend/prompt_templates/` como `image_*.txt`, sustituidos con el mismo mecanismo que el resto (`render_prompt_template`).
+
 ### Propietario (usuario local, sin autenticación todavía)
 
 Aunque el MVP no incluye login, el backend **aísla campañas/sesiones por propietario** usando `LOCAL_OWNER_UUID`.

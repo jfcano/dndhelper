@@ -1,0 +1,1 @@
+Detailed fantasy city map, top-down, districts and walls, painterly cartography, no readable text or labels. City «__CITY_NAME__». Local character: __THEME__. World context: __WORLD_FLAVOR__.

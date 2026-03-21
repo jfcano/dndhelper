@@ -2,10 +2,17 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { World } from '../lib/api'
+import { ConfirmCascadeDeleteDialog } from '../components/ConfirmCascadeDeleteDialog'
 import { IconButton } from '../components/IconButton'
 import { IconPlus, IconTrash } from '../components/icons'
 import { formatError } from '../lib/errors'
 import { toSpanishStatus } from '../lib/statusLabels'
+
+type WorldDeleteState = {
+  world: World
+  campaignCount: number
+  campaignNames: string[]
+}
 
 export function WorldsPage() {
   const navigate = useNavigate()
@@ -13,6 +20,7 @@ export function WorldsPage() {
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [deletingWorldId, setDeletingWorldId] = useState<string | null>(null)
+  const [deleteDialog, setDeleteDialog] = useState<WorldDeleteState | null>(null)
 
   async function reload() {
     setError(null)
@@ -43,30 +51,33 @@ export function WorldsPage() {
     }
   }
 
-  async function onDeleteWorld(world: World) {
-    let campaignCount = 0
+  async function openDeleteWorldDialog(world: World) {
+    setError(null)
     try {
       const usage = await api.getWorldUsage(world.id)
-      campaignCount = usage.campaign_count
+      let names: string[] = []
+      if (usage.campaign_count > 0) {
+        const linked = await api.listCampaignsForWorld(world.id, 50, 0)
+        names = linked.map((c) => c.name)
+      }
+      setDeleteDialog({
+        world,
+        campaignCount: usage.campaign_count,
+        campaignNames: names,
+      })
     } catch (e) {
       setError(formatError(e))
-      return
     }
+  }
 
-    if (campaignCount > 0) {
-      window.alert(`No puedes borrar "${world.name}" porque está siendo usado por ${campaignCount} campaña(s).`)
-      return
-    }
-
-    const ok = window.confirm(
-      `¿Seguro que quieres borrar "${world.name}"? Actualmente lo usan ${campaignCount} campaña(s). Esta acción no se puede deshacer.`,
-    )
-    if (!ok) return
-
+  async function confirmDeleteWorld() {
+    if (!deleteDialog) return
+    const { world, campaignCount } = deleteDialog
     setDeletingWorldId(world.id)
     setError(null)
     try {
-      await api.deleteWorld(world.id)
+      await api.deleteWorld(world.id, { cascade: campaignCount > 0 })
+      setDeleteDialog(null)
       await reload()
     } catch (e) {
       setError(formatError(e))
@@ -75,8 +86,33 @@ export function WorldsPage() {
     }
   }
 
+  const deleteDetails =
+    deleteDialog && deleteDialog.campaignCount > 0
+      ? [
+          `${deleteDialog.campaignCount} campaña(s) vinculada(s): ${deleteDialog.campaignNames.length ? deleteDialog.campaignNames.join(', ') : '(sin cargar nombres)'}.`,
+          'Cada campaña se eliminará por completo, incluidas todas sus sesiones, brief, historia y outlines guardados.',
+        ]
+      : undefined
+
   return (
     <div className="page">
+      <ConfirmCascadeDeleteDialog
+        open={deleteDialog !== null}
+        onClose={() => {
+          if (deletingWorldId === null) setDeleteDialog(null)
+        }}
+        title={`Borrar mundo «${deleteDialog?.world.name ?? ''}»`}
+        description={
+          deleteDialog && deleteDialog.campaignCount > 0
+            ? 'Este mundo tiene campañas que dependen de él. Si continúas, se eliminarán en cascada.'
+            : 'Vas a eliminar este mundo y sus datos (contenido, plantilla de imágenes en servidor).'
+        }
+        details={deleteDetails}
+        confirmLabel="Borrar mundo"
+        busy={deletingWorldId !== null}
+        onConfirm={() => void confirmDeleteWorld()}
+      />
+
       <div className="page-head">
         <h2>Mundos</h2>
         <div className="btn-row">
@@ -125,7 +161,7 @@ export function WorldsPage() {
                       busyLabel="Borrando…"
                       busyShort="…"
                       className="btn-icon--inline"
-                      onClick={() => void onDeleteWorld(w)}
+                      onClick={() => void openDeleteWorldDialog(w)}
                     >
                       <IconTrash />
                     </IconButton>
@@ -146,4 +182,3 @@ export function WorldsPage() {
     </div>
   )
 }
-

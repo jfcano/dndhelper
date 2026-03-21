@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { Campaign, CampaignBrief, CampaignWizardDraft, PlayerProfile, Session, World } from '../lib/api'
 import { formatError } from '../lib/errors'
+import { ConfirmCascadeDeleteDialog } from '../components/ConfirmCascadeDeleteDialog'
 import { IconButton } from '../components/IconButton'
 import {
   IconArrowLeft,
@@ -297,6 +298,14 @@ export function CampaignDetailPage() {
   const [sessionSummaryEditor, setSessionSummaryEditor] = useState('')
   const [sessionSummarySaving, setSessionSummarySaving] = useState(false)
   const [sessionDeleteLoadingId, setSessionDeleteLoadingId] = useState<string | null>(null)
+  const [sessionDeletePending, setSessionDeletePending] = useState<Session | null>(null)
+  const [playerDeletePending, setPlayerDeletePending] = useState<{ id: string; name: string } | null>(null)
+  const [playerDeleteBusy, setPlayerDeleteBusy] = useState(false)
+  const [campaignWizardRemovePending, setCampaignWizardRemovePending] = useState<{
+    kind: 'theme' | 'inspiration'
+    index: number
+    label: string
+  } | null>(null)
   const [sessionApproving, setSessionApproving] = useState(false)
   const [sessionReopening, setSessionReopening] = useState(false)
 
@@ -591,12 +600,14 @@ export function CampaignDetailPage() {
     }
   }
 
-  async function onDeleteSession(sessionId: string) {
-    if (!campaign) return
+  async function confirmDeleteSession() {
+    if (!campaign || !sessionDeletePending) return
+    const sessionId = sessionDeletePending.id
     setSessionDeleteLoadingId(sessionId)
     setSessionsError(null)
     try {
       await api.deleteSession(sessionId)
+      setSessionDeletePending(null)
       const refreshed = await api.listSessionsForCampaign(campaign.id)
       const sorted = [...refreshed].sort((a, b) => a.session_number - b.session_number)
       setSessions(sorted)
@@ -634,11 +645,30 @@ export function CampaignDetailPage() {
     }
   }
 
-  async function onDeleteGeneratedPlayer(playerId: string) {
-    if (!campaign) return
+  function confirmCampaignWizardRemove() {
+    if (!campaignWizardRemovePending) return
+    const { kind, index } = campaignWizardRemovePending
+    if (kind === 'theme') {
+      setWizard((w) => ({
+        ...w,
+        themes: w.themes.length > 1 ? w.themes.filter((_, idx) => idx !== index) : w.themes,
+      }))
+    } else {
+      setWizard((w) => ({
+        ...w,
+        inspirations: w.inspirations.length > 1 ? w.inspirations.filter((_, idx) => idx !== index) : w.inspirations,
+      }))
+    }
+    setCampaignWizardRemovePending(null)
+  }
+
+  async function confirmDeleteGeneratedPlayer() {
+    if (!campaign || !playerDeletePending) return
+    setPlayerDeleteBusy(true)
     setPlayersError(null)
     try {
-      const updated = await api.deletePlayerForCampaign(campaign.id, playerId)
+      const updated = await api.deletePlayerForCampaign(campaign.id, playerDeletePending.id)
+      setPlayerDeletePending(null)
       const normalized = updated.map((p: PlayerProfile, idx) => ({
         id: String(p.id ?? idx),
         name: String(p.name ?? `Jugador ${idx + 1}`),
@@ -649,6 +679,8 @@ export function CampaignDetailPage() {
       setSelectedPlayerIndex((prev) => Math.min(prev, Math.max(normalized.length - 1, 0)))
     } catch (e) {
       setPlayersError(formatError(e))
+    } finally {
+      setPlayerDeleteBusy(false)
     }
   }
 
@@ -1185,10 +1217,11 @@ export function CampaignDetailPage() {
                       className="btn-icon--inline"
                       disabled={wizard.themes.length <= 1}
                       onClick={() =>
-                        setWizard((w) => ({
-                          ...w,
-                          themes: w.themes.length > 1 ? w.themes.filter((_, idx) => idx !== i) : w.themes,
-                        }))
+                        setCampaignWizardRemovePending({
+                          kind: 'theme',
+                          index: i,
+                          label: t.trim() || `Tema ${i + 1}`,
+                        })
                       }
                     >
                       <IconMinus />
@@ -1283,10 +1316,11 @@ export function CampaignDetailPage() {
                       className="btn-icon--inline"
                       disabled={wizard.inspirations.length <= 1}
                       onClick={() =>
-                        setWizard((w) => ({
-                          ...w,
-                          inspirations: w.inspirations.length > 1 ? w.inspirations.filter((_, idx) => idx !== i) : w.inspirations,
-                        }))
+                        setCampaignWizardRemovePending({
+                          kind: 'inspiration',
+                          index: i,
+                          label: t.trim() || `Inspiración ${i + 1}`,
+                        })
                       }
                     >
                       <IconMinus />
@@ -1588,7 +1622,7 @@ export function CampaignDetailPage() {
                                 className="btn-icon--inline"
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  void onDeleteSession(s.id)
+                                  setSessionDeletePending(s)
                                 }}
                               >
                                 <IconTrash />
@@ -1848,7 +1882,7 @@ export function CampaignDetailPage() {
                                 className="btn-icon--inline"
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  onDeleteGeneratedPlayer(p.id)
+                                  setPlayerDeletePending({ id: p.id, name: p.name })
                                 }}
                               >
                                 <IconTrash />
@@ -1901,6 +1935,68 @@ export function CampaignDetailPage() {
           )}
         </>
       )}
+
+      <ConfirmCascadeDeleteDialog
+        open={campaignWizardRemovePending !== null}
+        onClose={() => setCampaignWizardRemovePending(null)}
+        title={
+          campaignWizardRemovePending
+            ? campaignWizardRemovePending.kind === 'theme'
+              ? `Quitar tema «${campaignWizardRemovePending.label}»`
+              : `Quitar inspiración «${campaignWizardRemovePending.label}»`
+            : 'Quitar entrada'
+        }
+        description="Solo afecta al borrador del asistente de campaña en este navegador hasta que guardes el brief."
+        details={
+          campaignWizardRemovePending?.kind === 'theme'
+            ? ['Este tema dejará de enviarse al generar el resumen inicial']
+            : ['Esta inspiración dejará de enviarse al generar el mundo de campaña']
+        }
+        confirmLabel="Quitar"
+        onConfirm={() => confirmCampaignWizardRemove()}
+      />
+
+      <ConfirmCascadeDeleteDialog
+        open={sessionDeletePending !== null}
+        onClose={() => {
+          if (sessionDeleteLoadingId === null) setSessionDeletePending(null)
+        }}
+        title={
+          sessionDeletePending
+            ? `Borrar sesión ${sessionDeletePending.session_number}: «${sessionDeletePending.title}»`
+            : 'Borrar sesión'
+        }
+        description="La sesión dejará de existir en esta campaña."
+        details={
+          sessionDeletePending
+            ? [
+                'Resumen o planificación guardados',
+                'Notas y borrador de acta, o contenido final si estaba aprobado',
+                'Estado de aprobación y metadatos de la sesión',
+              ]
+            : undefined
+        }
+        confirmLabel="Borrar sesión"
+        busy={sessionDeleteLoadingId !== null}
+        onConfirm={() => void confirmDeleteSession()}
+      />
+
+      <ConfirmCascadeDeleteDialog
+        open={playerDeletePending !== null}
+        onClose={() => {
+          if (!playerDeleteBusy) setPlayerDeletePending(null)
+        }}
+        title={playerDeletePending ? `Borrar personaje «${playerDeletePending.name}»` : 'Borrar personaje'}
+        description="Se elimina solo este jugador del listado generado de la campaña."
+        details={
+          playerDeletePending
+            ? ['Resumen del personaje', 'Ficha básica asociada en el borrador de la campaña']
+            : undefined
+        }
+        confirmLabel="Borrar personaje"
+        busy={playerDeleteBusy}
+        onConfirm={() => void confirmDeleteGeneratedPlayer()}
+      />
     </div>
   )
 }

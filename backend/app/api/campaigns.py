@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 import json
@@ -22,7 +22,8 @@ from backend.app.schemas import (
     SessionCreate,
     SessionOut,
 )
-from backend.app.services import generation_service
+from backend.app.services import generation_service, world_image_service
+from backend.app.world_names import is_world_name_taken
 from sqlalchemy import func, select
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -110,37 +111,43 @@ def patch(campaign_id: UUID, payload: CampaignUpdate, db: Session = Depends(get_
 
 
 @router.delete("/{campaign_id}")
-def delete(campaign_id: UUID, db: Session = Depends(get_db)) -> dict:
+def delete(
+    campaign_id: UUID,
+    cascade: bool = Query(default=False, description="Eliminar la campaña y todas sus sesiones y datos asociados."),
+    db: Session = Depends(get_db),
+) -> dict:
     owner_id = get_owner_id()
     obj = crud.get_campaign(db, owner_id, campaign_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
 
-    reasons: list[str] = []
-    # Bloqueamos el borrado solo si existe contenido real en `brief_final`.
-    # `brief_status` puede quedar inconsistente con datos históricos.
-    if obj.brief_status == "approved" and obj.brief_final:
-        reasons.append("brief aprobado")
-    if obj.brief_status == "approved" and obj.story_final:
-        reasons.append("resumen de historia aprobado")
-    if obj.outline_draft or obj.outline_final:
-        reasons.append("outline generado")
+    if not cascade:
+        reasons: list[str] = []
+        # Bloqueamos el borrado solo si existe contenido real en `brief_final`.
+        # `brief_status` puede quedar inconsistente con datos históricos.
+        if obj.brief_status == "approved" and obj.brief_final:
+            reasons.append("brief aprobado")
+        if obj.brief_status == "approved" and obj.story_final:
+            reasons.append("resumen de historia aprobado")
+        if obj.outline_draft or obj.outline_final:
+            reasons.append("outline generado")
 
-    sessions_count = int(
-        db.execute(select(func.count(CampaignSession.id)).where(CampaignSession.campaign_id == campaign_id)).scalar_one() or 0
-    )
-    if sessions_count > 0:
-        reasons.append(f"{sessions_count} sesión(es)")
-
-    if reasons:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "No se puede borrar la campaign porque tiene contenido generado: "
-                + ", ".join(reasons)
-                + "."
-            ),
+        sessions_count = int(
+            db.execute(select(func.count(CampaignSession.id)).where(CampaignSession.campaign_id == campaign_id)).scalar_one()
+            or 0
         )
+        if sessions_count > 0:
+            reasons.append(f"{sessions_count} sesión(es)")
+
+        if reasons:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "No se puede borrar la campaign porque tiene contenido generado: "
+                    + ", ".join(reasons)
+                    + ". Usa ?cascade=true tras confirmar en el cliente."
+                ),
+            )
 
     crud.delete_campaign(db, obj)
     return {"ok": True}
@@ -322,6 +329,15 @@ def generate_world_for_campaign(campaign_id: UUID, db: Session = Depends(get_db)
         raise HTTPException(status_code=400, detail="El brief debe estar aprobado antes de generar el mundo.")
 
     gw = generation_service.generate_world(brief=campaign.brief_final)
+    if is_world_name_taken(db, owner_id, gw.name):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"El nombre de mundo generado «{gw.name}» ya está en uso. "
+                "Renombra el mundo existente o vuelve a generar el mundo de la campaña tras ajustar el brief."
+            ),
+        )
+    draft_dict = gw.draft if isinstance(gw.draft, dict) else {}
     world = World(
         owner_id=owner_id,
         name=gw.name,
@@ -329,6 +345,12 @@ def generate_world_for_campaign(campaign_id: UUID, db: Session = Depends(get_db)
         tone=gw.tone,
         themes=gw.themes,
         content_draft=json.dumps(gw.draft, ensure_ascii=False),
+        visual_assets=world_image_service.build_brief_visual_slots(
+            draft=draft_dict,
+            world_name=gw.name,
+            pitch=gw.pitch,
+            tone=gw.tone,
+        ),
         status="draft",
     )
     db.add(world)

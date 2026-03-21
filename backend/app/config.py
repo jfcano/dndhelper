@@ -18,6 +18,8 @@ class Settings:
     local_owner_uuid: str
     openai_api_key: str | None
     openai_model: str
+    openai_image_model: str
+    world_image_generation_enabled: bool
     openai_embeddings_model: str
     chunk_size: int
     chunk_overlap: int
@@ -39,6 +41,9 @@ def get_settings() -> Settings:
         local_owner_uuid=os.getenv("LOCAL_OWNER_UUID", "bec82f4c-14ae-43aa-8c40-f45d950517f1"),
         openai_api_key=os.getenv("OPENAI_API_KEY"),
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        openai_image_model=os.getenv("OPENAI_IMAGE_MODEL", "dall-e-3"),
+        world_image_generation_enabled=os.getenv("WORLD_IMAGE_GENERATION", "true").strip().lower()
+        in ("1", "true", "yes", "y", "on"),
         openai_embeddings_model=os.getenv("OPENAI_EMBEDDINGS_MODEL", "text-embedding-3-large"),
         chunk_size=int(os.getenv("RAG_CHUNK_SIZE", "1200")),
         chunk_overlap=int(os.getenv("RAG_CHUNK_OVERLAP", "200")),

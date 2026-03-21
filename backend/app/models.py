@@ -26,6 +26,8 @@ class World(Base):
 
     content_draft: Mapped[str | None] = mapped_column(Text, nullable=True)
     content_final: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Mapas, emblemas y retratos generados (JSON: rutas relativas, estado, errores).
+    visual_assets: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

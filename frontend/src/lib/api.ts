@@ -1,5 +1,37 @@
 export type UUID = string
 
+/** Hueco de imagen: `planned_file` fijo; `file` se rellena tras generar con IA. */
+export type WorldVisualSlot = {
+  planned_file: string
+  file?: string | null
+  error?: string | null
+  label?: string
+  name?: string
+  faction_name?: string
+  /** Para retratos: se envían al prompt de imagen si existen. */
+  gender?: string | null
+  appearance?: string | null
+  kind?: string
+}
+
+/** Plantilla + imágenes generadas bajo demanda (mapas, emblemas, retratos). */
+export type WorldVisualAssets = {
+  status?: string
+  source?: string
+  message?: string
+  error?: string
+  warnings?: string[]
+  world_map?: (WorldVisualSlot & { label?: string }) | null
+  city_maps?: WorldVisualSlot[]
+  faction_emblems?: WorldVisualSlot[]
+  character_portraits?: WorldVisualSlot[]
+}
+
+export type WorldVisualGeneratePayload = {
+  target: 'world_map' | 'city_map' | 'faction_emblem' | 'character_portrait'
+  index?: number
+}
+
 export type World = {
   id: UUID
   owner_id: UUID
@@ -9,9 +41,21 @@ export type World = {
   themes: Record<string, unknown> | null
   content_draft: string | null
   content_final: string | null
+  visual_assets?: WorldVisualAssets | null
   status: string
   created_at: string
   updated_at: string
+}
+
+/**
+ * URL de una imagen persistida del mundo (sirve el backend).
+ * `cacheBuster` (p. ej. `world.updated_at`) evita que el navegador muestre la PNG antigua tras regenerar con la misma ruta.
+ */
+export function worldImageUrl(worldId: UUID, filename: string, cacheBuster?: string | null): string {
+  const base = `/api/worlds/${worldId}/image/${encodeURIComponent(filename)}`
+  if (cacheBuster == null || cacheBuster === '') return base
+  const v = encodeURIComponent(cacheBuster)
+  return `${base}?v=${v}`
 }
 
 export type Campaign = {
@@ -77,6 +121,9 @@ export type WorldWizardCharacterInput = {
   faction_name: string
   role: string
   motivation: string
+  /** Opcional; mejora retratos con IA */
+  gender?: string
+  appearance?: string
 }
 
 export type WorldWizardCityInput = {
@@ -205,7 +252,10 @@ export const api = {
     }),
   generateWorldForCampaign: (id: UUID) =>
     request<Campaign>(`/api/campaigns/${id}/world:generate`, { method: 'POST', body: '{}' }),
-  deleteCampaign: (id: UUID) => request<{ ok: boolean }>(`/api/campaigns/${id}`, { method: 'DELETE' }),
+  deleteCampaign: (id: UUID, options?: { cascade?: boolean }) => {
+    const q = options?.cascade ? '?cascade=true' : ''
+    return request<{ ok: boolean }>(`/api/campaigns/${id}${q}`, { method: 'DELETE' })
+  },
   listSessionsForCampaign: (campaignId: UUID, limit = 50, offset = 0) =>
     request<Session[]>(
       `/api/campaigns/${campaignId}/sessions?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`,
@@ -306,10 +356,21 @@ export const api = {
   getWorldUsage: (id: UUID) => request<WorldUsage>(`/api/worlds/${id}/usage`),
   listCampaignsForWorld: (id: UUID, limit = 50, offset = 0) =>
     request<Campaign[]>(`/api/worlds/${id}/campaigns?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`),
+  generateWorldVisual: (id: UUID, payload: WorldVisualGeneratePayload) =>
+    request<World>(`/api/worlds/${id}/visual:generate`, {
+      method: 'POST',
+      body: JSON.stringify({
+        target: payload.target,
+        index: payload.index ?? 0,
+      }),
+    }),
   patchWorld: (id: UUID, payload: WorldUpdate) =>
     request<World>(`/api/worlds/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   approveWorld: (id: UUID) => request<World>(`/api/worlds/${id}/approve`, { method: 'POST', body: '{}' }),
   reopenWorld: (id: UUID) => request<World>(`/api/worlds/${id}/reopen`, { method: 'POST', body: '{}' }),
-  deleteWorld: (id: UUID) => request<{ ok: boolean }>(`/api/worlds/${id}`, { method: 'DELETE' }),
+  deleteWorld: (id: UUID, options?: { cascade?: boolean }) => {
+    const q = options?.cascade ? '?cascade=true' : ''
+    return request<{ ok: boolean }>(`/api/worlds/${id}${q}`, { method: 'DELETE' })
+  },
 }
 

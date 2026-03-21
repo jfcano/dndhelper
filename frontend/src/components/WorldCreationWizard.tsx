@@ -11,12 +11,27 @@ import {
   IconSparkles,
 } from './icons'
 import { formatError } from '../lib/errors'
+import { ConfirmCascadeDeleteDialog } from './ConfirmCascadeDeleteDialog'
+
+function normalizeWizardCharacter(raw: unknown): WorldGenerate['characters'][number] {
+  const c = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  return {
+    name: typeof c.name === 'string' ? c.name : '',
+    faction_name: typeof c.faction_name === 'string' ? c.faction_name : '',
+    role: typeof c.role === 'string' ? c.role : '',
+    motivation: typeof c.motivation === 'string' ? c.motivation : '',
+    gender: typeof c.gender === 'string' ? c.gender : '',
+    appearance: typeof c.appearance === 'string' ? c.appearance : '',
+  }
+}
 
 function createEmptyWizard(): WorldGenerate {
   return {
     theme_and_mood: '',
     factions: [{ name: '', objective: '' }],
-    characters: [{ name: '', faction_name: '', role: '', motivation: '' }],
+    characters: [
+      { name: '', faction_name: '', role: '', motivation: '', gender: '', appearance: '' },
+    ],
     cities: [{ name: '', theme: '', relations: [] }],
   }
 }
@@ -28,6 +43,12 @@ function wizardStorageKey(worldId: UUID): string {
 function wizardStepStorageKey(worldId: UUID): string {
   return `dndhelper.worldWizard.step.${worldId}.v1`
 }
+
+type WizardRemovePending =
+  | null
+  | { kind: 'faction'; index: number; label: string }
+  | { kind: 'character'; index: number; label: string }
+  | { kind: 'city'; index: number; label: string }
 
 export function WorldCreationWizard({
   worldId,
@@ -41,6 +62,7 @@ export function WorldCreationWizard({
   const [error, setError] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [autogeneratingStep, setAutogeneratingStep] = useState<number | null>(null)
+  const [wizardRemovePending, setWizardRemovePending] = useState<WizardRemovePending>(null)
 
   const factionNames = useMemo(() => wizard.factions.map((f) => f.name.trim()).filter(Boolean), [wizard.factions])
 
@@ -53,7 +75,9 @@ export function WorldCreationWizard({
           theme_and_mood: typeof parsed.theme_and_mood === 'string' ? parsed.theme_and_mood : '',
           factions: Array.isArray(parsed.factions) && parsed.factions.length > 0 ? parsed.factions : createEmptyWizard().factions,
           characters:
-            Array.isArray(parsed.characters) && parsed.characters.length > 0 ? parsed.characters : createEmptyWizard().characters,
+            Array.isArray(parsed.characters) && parsed.characters.length > 0
+              ? parsed.characters.map((ch) => normalizeWizardCharacter(ch))
+              : createEmptyWizard().characters,
           cities: Array.isArray(parsed.cities) && parsed.cities.length > 0 ? parsed.cities : createEmptyWizard().cities,
         })
       }
@@ -77,6 +101,28 @@ export function WorldCreationWizard({
   useEffect(() => {
     localStorage.setItem(wizardStepStorageKey(worldId), String(step))
   }, [step, worldId])
+
+  function confirmWizardRemove() {
+    if (!wizardRemovePending) return
+    const { kind, index } = wizardRemovePending
+    if (kind === 'faction') {
+      setWizard((w) => ({
+        ...w,
+        factions: w.factions.length > 1 ? w.factions.filter((_, idx) => idx !== index) : w.factions,
+      }))
+    } else if (kind === 'character') {
+      setWizard((w) => ({
+        ...w,
+        characters: w.characters.length > 1 ? w.characters.filter((_, idx) => idx !== index) : w.characters,
+      }))
+    } else {
+      setWizard((w) => ({
+        ...w,
+        cities: w.cities.length > 1 ? w.cities.filter((_, idx) => idx !== index) : w.cities,
+      }))
+    }
+    setWizardRemovePending(null)
+  }
 
   function canContinueFromCurrentStep(): boolean {
     if (step === 0) return wizard.theme_and_mood.trim().length >= 10
@@ -219,10 +265,11 @@ export function WorldCreationWizard({
                 className="btn-icon--inline"
                 disabled={wizard.factions.length <= 1}
                 onClick={() =>
-                  setWizard((w) => ({
-                    ...w,
-                    factions: w.factions.length > 1 ? w.factions.filter((_, idx) => idx !== i) : w.factions,
-                  }))
+                  setWizardRemovePending({
+                    kind: 'faction',
+                    index: i,
+                    label: f.name.trim() || `Facción ${i + 1}`,
+                  })
                 }
               >
                 <IconMinus />
@@ -261,71 +308,98 @@ export function WorldCreationWizard({
             </IconButton>
           </div>
           {wizard.characters.map((c, i) => (
-            <div key={`c-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 2fr auto', gap: 8 }}>
-              <input
-                placeholder="Nombre"
-                value={c.name}
-                onChange={(e) =>
-                  setWizard((w) => {
-                    const characters = [...w.characters]
-                    characters[i] = { ...characters[i], name: e.target.value }
-                    return { ...w, characters }
-                  })
-                }
-              />
-              <select
-                value={c.faction_name}
-                onChange={(e) =>
-                  setWizard((w) => {
-                    const characters = [...w.characters]
-                    characters[i] = { ...characters[i], faction_name: e.target.value }
-                    return { ...w, characters }
-                  })
-                }
-              >
-                <option value="">Facción…</option>
-                {factionNames.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-              <input
-                placeholder="Rol"
-                value={c.role}
-                onChange={(e) =>
-                  setWizard((w) => {
-                    const characters = [...w.characters]
-                    characters[i] = { ...characters[i], role: e.target.value }
-                    return { ...w, characters }
-                  })
-                }
-              />
-              <input
-                placeholder="Motivación"
-                value={c.motivation}
-                onChange={(e) =>
-                  setWizard((w) => {
-                    const characters = [...w.characters]
-                    characters[i] = { ...characters[i], motivation: e.target.value }
-                    return { ...w, characters }
-                  })
-                }
-              />
-              <IconButton
-                label="Quitar personaje"
-                textShort="Quitar"
-                className="btn-icon--inline"
-                disabled={wizard.characters.length <= 1}
-                onClick={() =>
-                  setWizard((w) => ({
-                    ...w,
-                    characters: w.characters.length > 1 ? w.characters.filter((_, idx) => idx !== i) : w.characters,
-                  }))
-                }
-              >
-                <IconMinus />
-              </IconButton>
+            <div key={`c-${i}`} style={{ display: 'grid', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 2fr auto', gap: 8 }}>
+                <input
+                  placeholder="Nombre"
+                  value={c.name}
+                  onChange={(e) =>
+                    setWizard((w) => {
+                      const characters = [...w.characters]
+                      characters[i] = { ...characters[i], name: e.target.value }
+                      return { ...w, characters }
+                    })
+                  }
+                />
+                <select
+                  value={c.faction_name}
+                  onChange={(e) =>
+                    setWizard((w) => {
+                      const characters = [...w.characters]
+                      characters[i] = { ...characters[i], faction_name: e.target.value }
+                      return { ...w, characters }
+                    })
+                  }
+                >
+                  <option value="">Facción…</option>
+                  {factionNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  placeholder="Rol"
+                  value={c.role}
+                  onChange={(e) =>
+                    setWizard((w) => {
+                      const characters = [...w.characters]
+                      characters[i] = { ...characters[i], role: e.target.value }
+                      return { ...w, characters }
+                    })
+                  }
+                />
+                <input
+                  placeholder="Motivación"
+                  value={c.motivation}
+                  onChange={(e) =>
+                    setWizard((w) => {
+                      const characters = [...w.characters]
+                      characters[i] = { ...characters[i], motivation: e.target.value }
+                      return { ...w, characters }
+                    })
+                  }
+                />
+                <IconButton
+                  label="Quitar personaje"
+                  textShort="Quitar"
+                  className="btn-icon--inline"
+                  disabled={wizard.characters.length <= 1}
+                  onClick={() =>
+                    setWizardRemovePending({
+                      kind: 'character',
+                      index: i,
+                      label: c.name.trim() || `Personaje ${i + 1}`,
+                    })
+                  }
+                >
+                  <IconMinus />
+                </IconButton>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
+                <input
+                  placeholder="Género / presentación (opc., retratos IA)"
+                  value={c.gender ?? ''}
+                  onChange={(e) =>
+                    setWizard((w) => {
+                      const characters = [...w.characters]
+                      characters[i] = { ...characters[i], gender: e.target.value }
+                      return { ...w, characters }
+                    })
+                  }
+                />
+                <input
+                  placeholder="Apariencia: edad aparente, rasgos, vestimenta (opc.)"
+                  value={c.appearance ?? ''}
+                  onChange={(e) =>
+                    setWizard((w) => {
+                      const characters = [...w.characters]
+                      characters[i] = { ...characters[i], appearance: e.target.value }
+                      return { ...w, characters }
+                    })
+                  }
+                />
+              </div>
             </div>
           ))}
           <div>
@@ -337,7 +411,10 @@ export function WorldCreationWizard({
               onClick={() =>
                 setWizard((w) => ({
                   ...w,
-                  characters: [...w.characters, { name: '', faction_name: '', role: '', motivation: '' }],
+                  characters: [
+                    ...w.characters,
+                    { name: '', faction_name: '', role: '', motivation: '', gender: '', appearance: '' },
+                  ],
                 }))
               }
             >
@@ -411,10 +488,11 @@ export function WorldCreationWizard({
                 className="btn-icon--inline"
                 disabled={wizard.cities.length <= 1}
                 onClick={() =>
-                  setWizard((w) => ({
-                    ...w,
-                    cities: w.cities.length > 1 ? w.cities.filter((_, idx) => idx !== i) : w.cities,
-                  }))
+                  setWizardRemovePending({
+                    kind: 'city',
+                    index: i,
+                    label: c.name.trim() || `Ciudad ${i + 1}`,
+                  })
                 }
               >
                 <IconMinus />
@@ -483,6 +561,35 @@ export function WorldCreationWizard({
           )}
         </div>
       </div>
+
+      <ConfirmCascadeDeleteDialog
+        open={wizardRemovePending !== null}
+        onClose={() => setWizardRemovePending(null)}
+        title={
+          wizardRemovePending
+            ? wizardRemovePending.kind === 'faction'
+              ? `Quitar facción «${wizardRemovePending.label}»`
+              : wizardRemovePending.kind === 'character'
+                ? `Quitar personaje «${wizardRemovePending.label}»`
+                : `Quitar ciudad «${wizardRemovePending.label}»`
+            : 'Quitar entrada'
+        }
+        description="Solo afecta al borrador del asistente en este navegador; nada se guarda en el servidor hasta que pulses «Generar mundo»."
+        details={
+          wizardRemovePending?.kind === 'faction'
+            ? [
+                'Datos escritos en nombre y objetivo de la facción',
+                'Si algún personaje elige esta facción por nombre, deberás reasignarlo en el paso de personajes',
+              ]
+            : wizardRemovePending?.kind === 'character'
+              ? ['Nombre, facción, rol, motivación, género y apariencia de esta fila']
+              : wizardRemovePending?.kind === 'city'
+                ? ['Nombre, temática y relaciones de esta ciudad en el asistente']
+                : undefined
+        }
+        confirmLabel="Quitar"
+        onConfirm={() => confirmWizardRemove()}
+      />
     </div>
   )
 }

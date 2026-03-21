@@ -183,6 +183,8 @@ def _normalize_characters(items: list[dict], faction_names: list[str], *, flavor
                 raw.get("motivation"),
                 default=f"Servir los intereses de {faction_key} en un entorno de {flavor}.",
             ),
+            "gender": _clean_text(raw.get("gender"), default=""),
+            "appearance": _clean_text(raw.get("appearance"), default=""),
         }
         per_faction[faction_key].append(entry)
 
@@ -199,6 +201,8 @@ def _normalize_characters(items: list[dict], faction_names: list[str], *, flavor
                     "faction_name": faction_name,
                     "role": "Actor relevante",
                     "motivation": f"Impulsar la agenda principal de {faction_name} en un mundo de {flavor}.",
+                    "gender": "",
+                    "appearance": "",
                 }
             )
         normalized.extend(group)
@@ -274,9 +278,13 @@ def _wizard_canon_markdown(
                 faction_name = _clean_text(character.get("faction_name"), default="(sin faccion)")
                 role = _clean_text(character.get("role"), default="(sin rol)")
                 motivation = _clean_text(character.get("motivation"), default="(sin motivacion)")
+                gender = _clean_text(character.get("gender"), default="")
+                appearance = _clean_text(character.get("appearance"), default="")
             else:
                 name, faction_name, role, motivation = f"Personaje {idx}", "(sin faccion)", "(sin rol)", "(sin motivacion)"
-            lines.append(f"- {name} | Faccion: {faction_name} | Rol: {role} | Motivacion: {motivation}")
+                gender, appearance = "", ""
+            vis = f" | Genero/presentacion: {gender or '(no indicado)'} | Apariencia: {appearance or '(no indicada)'}"
+            lines.append(f"- {name} | Faccion: {faction_name} | Rol: {role} | Motivacion: {motivation}{vis}")
     else:
         lines.append("- (sin personajes)")
 
@@ -619,6 +627,8 @@ def autogenerate_world_wizard_step(*, step: int, wizard: dict[str, Any]) -> dict
                     "faction_name": "Nombre exacto de facción existente",
                     "role": "Rol",
                     "motivation": "Motivación clara",
+                    "gender": "mujer / hombre / no binario / otro (para retratos)",
+                    "appearance": "edad aparente, rasgos, vestimenta icónica (breve, para ilustración)",
                 }
             ],
             "constraints": {"per_faction_min": 4, "per_faction_max": 5},

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -28,6 +30,16 @@ class WorldWizardCharacterInput(BaseModel):
     faction_name: str = Field(min_length=1)
     role: str = Field(min_length=1)
     motivation: str = Field(min_length=1)
+    gender: str = Field(
+        default="",
+        max_length=120,
+        description="Género o presentación (opcional; mejora retratos).",
+    )
+    appearance: str = Field(
+        default="",
+        max_length=500,
+        description="Rasgos físicos, edad aparente, vestimenta icónica (opcional).",
+    )
 
 
 class WorldWizardCityInput(BaseModel):
@@ -55,6 +67,13 @@ class WorldWizardAutogenerateRequest(BaseModel):
     wizard: WorldWizardDraft
 
 
+class WorldVisualGenerateRequest(BaseModel):
+    """Genera una sola imagen (mapa, emblema o retrato) bajo demanda."""
+
+    target: Literal["world_map", "city_map", "faction_emblem", "character_portrait"]
+    index: int = Field(default=0, ge=0, description="Índice en city_maps / faction_emblems / character_portraits (0 para world_map).")
+
+
 class WorldOut(BaseModel):
     id: UUID
     owner_id: UUID
@@ -64,6 +83,7 @@ class WorldOut(BaseModel):
     themes: dict | None
     content_draft: str | None
     content_final: str | None
+    visual_assets: dict | None = None
     status: str
     created_at: datetime
     updated_at: datetime

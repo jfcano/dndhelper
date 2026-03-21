@@ -315,3 +315,8 @@ hr {
 html[data-theme='light'] ::selection {
   background: rgba(122, 92, 30, 0.25);
 }
+
+/* Diálogos de confirmación de borrado en cascada */
+.confirm-cascade-delete-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}

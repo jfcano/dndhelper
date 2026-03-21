@@ -15,7 +15,7 @@ Salida requerida: JSON con esta estructura aproximada:
     "overview": "Resumen general del mundo.",
     "regions": [{"name": "Región", "summary": "..."}],
     "factions": [{"name": "Facción", "goal": "...", "methods": "..."}],
-    "major_npcs": [{"name": "PNJ", "role": "...", "hook": "..."}],
+    "major_npcs": [{"name": "PNJ", "role": "...", "hook": "...", "gender": "presentación de género (opcional)", "appearance": "rasgos físicos / edad aparente / vestimenta para ilustración (opcional)"}],
     "secrets": ["Secretos (para el DM)"],
     "adventure_hooks": ["Ganchos de aventura"]
   }

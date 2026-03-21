@@ -1,0 +1,1 @@
+Regional fantasy terrain map, top-down, painterly cartography, no text. Region «__REGION_NAME__». __SUMMARY__. Context: __WORLD_FLAVOR__.
