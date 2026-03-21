@@ -708,6 +708,46 @@ def _campaign_clean_list(values: Any, *, default: str) -> list[str]:
     return cleaned or [default]
 
 
+def _normalize_campaign_constraints(constraints: Any) -> dict[str, str]:
+    """
+    El UI solo edita `constraints.notes` (texto libre con espacios).
+    Si el modelo devuelve un dict sin `notes` o con claves auxiliares, las volcamos a un único texto.
+    """
+    default_notes = "Sin restricciones especiales indicadas."
+    if constraints is None:
+        return {"notes": default_notes}
+    if isinstance(constraints, str):
+        s = constraints.strip()
+        return {"notes": s if s else default_notes}
+    if not isinstance(constraints, dict):
+        return {"notes": default_notes}
+
+    notes_raw = constraints.get("notes")
+    if isinstance(notes_raw, str) and notes_raw.strip():
+        return {"notes": notes_raw}
+
+    lines: list[str] = []
+    for k, v in sorted(constraints.items()):
+        if k == "notes":
+            continue
+        if isinstance(v, (dict, list)):
+            try:
+                blob = json.dumps(v, ensure_ascii=False)
+            except (TypeError, ValueError):
+                blob = str(v)
+            lines.append(f"{k}: {blob}")
+        else:
+            vs = str(v).strip()
+            if vs:
+                lines.append(f"{k}: {vs}")
+    composed = "\n".join(lines).strip()
+    if composed:
+        return {"notes": composed}
+    if isinstance(notes_raw, str):
+        return {"notes": notes_raw if notes_raw else default_notes}
+    return {"notes": default_notes}
+
+
 def autogenerate_campaign_wizard_step(*, step: int, wizard: dict[str, Any]) -> dict[str, Any]:
     step_map = {
         0: "tipo y tono",
@@ -769,9 +809,7 @@ def autogenerate_campaign_wizard_step(*, step: int, wizard: dict[str, Any]) -> d
         level_raw = raw.get("starting_level")
         level = int(level_raw) if isinstance(level_raw, int) or (isinstance(level_raw, str) and level_raw.isdigit()) else 1
         level = max(1, min(level, 20))
-        constraints = raw.get("constraints")
-        if not isinstance(constraints, dict):
-            constraints = {"notes": _clean_text(constraints, default="Sin restricciones especiales.")}
+        constraints = _normalize_campaign_constraints(raw.get("constraints"))
         return {"starting_level": level, "constraints": constraints}
 
     return {"inspirations": _campaign_clean_list(raw.get("inspirations"), default="fantasía clásica")}

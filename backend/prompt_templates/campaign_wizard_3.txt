@@ -8,8 +8,12 @@ Contexto RAG (reglas/lore):
 __RAG_CONTEXT_JSON__
 
 Restricciones de salida:
-- starting_level debe estar entre 1 y 20.
-- constraints debe ser un objeto JSON breve, claro y util para mesa.
+- starting_level: entero entre 1 y 20, coherente con el tono y temas del wizard.
+- constraints: objeto con EXACTAMENTE una clave: "notes".
+- constraints.notes: texto libre en español para la mesa (varias frases o viñetas en un solo string).
+  Debe sonar natural: usa espacios, comas y saltos de línea \\n donde ayude. NO uses snake_case ni claves JSON dentro del texto salvo que el usuario las haya pedido.
+  Cubre cuando aplique: límites de tono o contenido, estilo de juego (combate/rol), tabúes, duración o ritmo, reglas de casa implícitas.
+  Longitud orientativa: 2–6 frases o un párrafo corto, sin relleno genérico.
 
-Devuelve únicamente JSON válido con esta estructura:
+Devuelve únicamente JSON válido con esta estructura (ejemplo de forma, sustituye por contenido real):
 __OUTPUT_HINT_JSON__

@@ -798,9 +798,16 @@ export function CampaignDetailPage() {
   const storyPreviewRendered = useMemo(() => renderMarkdownLite(storyEditorText), [storyEditorText])
   const storyFinalRendered = useMemo(() => renderMarkdownLite(campaign?.story_final ?? ''), [campaign?.story_final])
 
+  /** No hacer trim() en cada tecla: si no, al escribir un espacio entre palabras desaparece (trim quita el trailing space). */
   function setConstraintNotes(notes: string) {
-    const trimmed = notes.trim()
-    setWizard((w) => ({ ...w, constraints: trimmed ? { ...(w.constraints ?? {}), notes: trimmed } : null }))
+    setWizard((w) => {
+      if (notes === '') {
+        const rest = { ...(w.constraints ?? {}) } as Record<string, unknown>
+        delete rest.notes
+        return { ...w, constraints: Object.keys(rest).length > 0 ? (rest as CampaignWizardDraft['constraints']) : null }
+      }
+      return { ...w, constraints: { ...(w.constraints ?? {}), notes } }
+    })
   }
 
   function getConstraintNotes(): string {
