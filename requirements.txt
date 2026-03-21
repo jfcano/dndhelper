@@ -16,7 +16,10 @@ psycopg[binary]
 sqlalchemy
 alembic
 pypdf
+python-docx
 cryptography>=3.1
+bcrypt
+PyJWT
 tqdm
 
 sentence-transformers

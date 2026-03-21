@@ -11,6 +11,21 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
+# El lifespan de FastAPI no debe lanzar el worker de ingesta durante los tests (interferiría con la BD de test).
+os.environ["INGEST_WORKER_AUTOSTART"] = "false"
+
+
+@pytest.fixture(autouse=True)
+def _openai_key_for_http_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Las rutas de IA leen la clave solo desde BD; en tests simulamos una clave válida."""
+    from backend.app import openai_key_runtime
+
+    monkeypatch.setattr(
+        openai_key_runtime,
+        "resolve_openai_api_key_for_owner",
+        lambda db, owner_id: "sk-test-placeholder-integration",
+    )
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _setup_test_db() -> Generator[None, None, None]:
@@ -49,6 +64,7 @@ def _setup_test_db() -> Generator[None, None, None]:
         conn.execute(text("DROP TABLE IF EXISTS worlds CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS owner_settings CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS ingest_jobs CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS arcs CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE"))
 
@@ -104,6 +120,12 @@ def _clean_tables() -> Generator[None, None, None]:
                 "TRUNCATE TABLE ingest_jobs; END IF; END $$;"
             )
         )
+        conn.execute(
+            text(
+                "DO $$ BEGIN IF to_regclass('public.users') IS NOT NULL THEN "
+                "TRUNCATE TABLE users; END IF; END $$;"
+            )
+        )
     yield
 
 
@@ -111,5 +133,10 @@ def _clean_tables() -> Generator[None, None, None]:
 def client() -> TestClient:
     from backend.app.main import app
 
-    return TestClient(app)
+    c = TestClient(app)
+    reg = c.post("/api/auth/register", json={"username": "pytest_user", "password": "pytest_pw_12"})
+    assert reg.status_code == 200, reg.text
+    token = reg.json()["access_token"]
+    c.headers.update({"Authorization": f"Bearer {token}"})
+    return c
 

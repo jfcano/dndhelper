@@ -16,6 +16,7 @@ from pathlib import Path
 
 from backend.app.db import get_sessionmaker
 from backend.app.ingest import IngestCancelledError, ingest_pdf
+from backend.app.rag_collection import rag_manuals_collection_for_owner
 from backend.app.ingest_job_repo import (
     claim_next_queued_job,
     finalize_job_failed,
@@ -79,6 +80,7 @@ def process_job(job_id: uuid.UUID) -> None:
         path = job.stored_path
         owner_id = job.owner_id
         display_name = job.original_filename
+        pre_coll = (job.collection_name or "").strip()
 
     logger.info(
         "[ingest_worker] Inicio job=%s propietario=%s nombre_original=%r fichero_en_disco=%s",
@@ -99,7 +101,7 @@ def process_job(job_id: uuid.UUID) -> None:
             finalize_job_failed(
                 db,
                 job_id,
-                "No hay clave de API de OpenAI para este propietario (Ajustes o OPENAI_API_KEY en el servidor).",
+                "No hay clave de API de OpenAI para este propietario (configúrala en Ajustes).",
                 phase_label="Sin clave API",
             )
         return
@@ -138,11 +140,17 @@ def process_job(job_id: uuid.UUID) -> None:
         with SessionLocal() as s:
             update_job_progress(s, job_id, pct, label)
 
-    logger.info("[ingest_worker] job=%s ejecutando ingest_pdf…", job_id)
+    collection_name = pre_coll or rag_manuals_collection_for_owner(owner_id)
+    logger.info(
+        "[ingest_worker] job=%s ejecutando ingest_pdf (colección=%s)…",
+        job_id,
+        collection_name,
+    )
     tok = bind_request_openai_api_key(key)
     try:
         result = ingest_pdf(
             path,
+            collection_name=collection_name,
             show_progress=False,
             progress_callback=on_progress,
             cancel_check=cancel_check,

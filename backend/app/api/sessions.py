@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app import crud
 from backend.app.db import get_db
-from backend.app.owner_context import get_owner_id
+from backend.app.owner_context import get_owner_id, is_admin
 from backend.app.schemas import SessionOut, SessionUpdate
 
 logger = logging.getLogger(__name__)
@@ -16,11 +16,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["sessions"])
 
 
+def _ctx():
+    return get_owner_id(), is_admin()
+
+
 def _list_sessions_all_for_owner(limit: int, offset: int, db: Session) -> list[SessionOut]:
-    owner_id = get_owner_id()
+    owner_id, adm = _ctx()
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
-    return crud.list_sessions_for_owner(db, owner_id, limit=limit, offset=offset)
+    return crud.list_sessions_for_owner(db, owner_id, limit=limit, offset=offset, admin=adm)
 
 
 # Listado global: NO usar `/sessions/list` — en Starlette puede resolverse como `/sessions/{session_id}` con
@@ -43,7 +47,7 @@ def list_all_sessions_stable_path(limit: int = 50, offset: int = 0, db: Session 
     response_model=list[SessionOut],
     operation_id="list_all_sessions",
     summary="Listar todas las sesiones",
-    description="Sesiones de todas las campañas del propietario (MVP: LOCAL_OWNER_UUID), con paginación.",
+    description="Sesiones de todas las campañas del usuario autenticado, con paginación.",
 )
 def list_all_sessions(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)) -> list[SessionOut]:
     return _list_sessions_all_for_owner(limit, offset, db)
@@ -53,11 +57,13 @@ def list_all_sessions(limit: int = 50, offset: int = 0, db: Session = Depends(ge
 def list_sessions_for_campaign(
     campaign_id: UUID, limit: int = 50, offset: int = 0, db: Session = Depends(get_db)
 ) -> list[SessionOut]:
-    owner_id = get_owner_id()
+    owner_id, adm = _ctx()
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
     try:
-        return crud.list_sessions_by_campaign(db, owner_id, campaign_id, limit=limit, offset=offset)
+        return crud.list_sessions_by_campaign(
+            db, owner_id, campaign_id, limit=limit, offset=offset, admin=adm
+        )
     except LookupError:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.") from None
 
@@ -73,8 +79,8 @@ def list_sessions_for_campaign(
     summary="Aprobar sesión",
 )
 def approve_session(session_id: UUID, db: Session = Depends(get_db)) -> SessionOut:
-    owner_id = get_owner_id()
-    obj = crud.get_session(db, owner_id, session_id)
+    owner_id, adm = _ctx()
+    obj = crud.get_session(db, owner_id, session_id, admin=adm)
     if not obj:
         raise HTTPException(status_code=404, detail="Session no encontrada.")
     if (obj.approval_status or "").strip().lower() == "approved":
@@ -98,13 +104,13 @@ def approve_session(session_id: UUID, db: Session = Depends(get_db)) -> SessionO
     ),
 )
 def reopen_session_to_draft(session_id: UUID, db: Session = Depends(get_db)) -> SessionOut:
-    owner_id = get_owner_id()
+    owner_id, adm = _ctx()
     logger.info(
         "session.reopen: solicitud session_id=%s owner_id=%s",
         session_id,
         owner_id,
     )
-    obj = crud.get_session(db, owner_id, session_id)
+    obj = crud.get_session(db, owner_id, session_id, admin=adm)
     if not obj:
         logger.warning("session.reopen: 404 session no encontrada session_id=%s owner_id=%s", session_id, owner_id)
         raise HTTPException(status_code=404, detail="Session no encontrada.")
@@ -121,8 +127,8 @@ def reopen_session_to_draft(session_id: UUID, db: Session = Depends(get_db)) -> 
 
 @router.get("/sessions/{session_id}", response_model=SessionOut)
 def get_session(session_id: UUID, db: Session = Depends(get_db)) -> SessionOut:
-    owner_id = get_owner_id()
-    obj = crud.get_session(db, owner_id, session_id)
+    owner_id, adm = _ctx()
+    obj = crud.get_session(db, owner_id, session_id, admin=adm)
     if not obj:
         raise HTTPException(status_code=404, detail="Session no encontrada.")
     return obj
@@ -130,8 +136,8 @@ def get_session(session_id: UUID, db: Session = Depends(get_db)) -> SessionOut:
 
 @router.patch("/sessions/{session_id}", response_model=SessionOut)
 def patch_session(session_id: UUID, payload: SessionUpdate, db: Session = Depends(get_db)) -> SessionOut:
-    owner_id = get_owner_id()
-    obj = crud.get_session(db, owner_id, session_id)
+    owner_id, adm = _ctx()
+    obj = crud.get_session(db, owner_id, session_id, admin=adm)
     if not obj:
         raise HTTPException(status_code=404, detail="Session no encontrada.")
     data = payload.model_dump(exclude_unset=True)
@@ -147,8 +153,8 @@ def patch_session(session_id: UUID, payload: SessionUpdate, db: Session = Depend
 
 @router.delete("/sessions/{session_id}")
 def delete_session(session_id: UUID, db: Session = Depends(get_db)) -> dict:
-    owner_id = get_owner_id()
-    obj = crud.get_session(db, owner_id, session_id)
+    owner_id, adm = _ctx()
+    obj = crud.get_session(db, owner_id, session_id, admin=adm)
     if not obj:
         raise HTTPException(status_code=404, detail="Session no encontrada.")
     campaign_id = obj.campaign_id

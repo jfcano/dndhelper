@@ -232,3 +232,32 @@ html[data-theme='light'] .header-d20 {
     display: none;
   }
 }
+
+.nav-user {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.5rem;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-admin-badge {
+  font-size: 0.75em;
+  opacity: 0.85;
+  font-weight: 600;
+}
+
+.nav-logout.linkish {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  color: var(--gold-bright, #c9a227);
+  text-decoration: underline;
+  padding: 0.35rem 0.5rem;
+}
+
+.nav-logout.linkish:hover {
+  opacity: 0.9;
+}

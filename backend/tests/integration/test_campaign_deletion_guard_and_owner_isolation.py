@@ -57,13 +57,10 @@ def test_campaign_delete_allowed_without_approval(client, monkeypatch: pytest.Mo
     assert r.json()["ok"] is True
 
 
-def test_owner_isolation_worlds_and_campaigns(client, monkeypatch: pytest.MonkeyPatch) -> None:
-    from uuid import UUID
+def test_owner_isolation_worlds_and_campaigns(client) -> None:
+    from fastapi.testclient import TestClient
 
-    owner1 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-    owner2 = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-
-    monkeypatch.setenv("LOCAL_OWNER_UUID", owner1)
+    from backend.app.main import app
 
     r = client.post("/api/worlds", json={"name": "Mundo"})
     assert r.status_code == 200
@@ -76,15 +73,18 @@ def test_owner_isolation_worlds_and_campaigns(client, monkeypatch: pytest.Monkey
     r = client.patch(f"/api/campaigns/{cid}", json={"world_id": wid})
     assert r.status_code == 200
 
-    monkeypatch.setenv("LOCAL_OWNER_UUID", owner2)
+    other = TestClient(app)
+    reg = other.post("/api/auth/register", json={"username": "user_b_iso", "password": "pw12345678"})
+    assert reg.status_code == 200, reg.text
+    other.headers.update({"Authorization": f"Bearer {reg.json()['access_token']}"})
 
-    r = client.get("/api/campaigns")
+    r = other.get("/api/campaigns")
     assert r.status_code == 200
     assert r.json() == []
 
-    r = client.get(f"/api/worlds/{wid}")
+    r = other.get(f"/api/worlds/{wid}")
     assert r.status_code == 404
 
-    r = client.get(f"/api/campaigns/{cid}")
+    r = other.get(f"/api/campaigns/{cid}")
     assert r.status_code == 404
 

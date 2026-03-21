@@ -32,7 +32,7 @@ El proyecto está pensado como **MVP multiplataforma** (Windows y Linux): backen
 - **Gestionar campañas** con un flujo por fases: brief del director, historia/guion de campaña, outline, y **sesiones** numeradas con borradores que pueden aprobarse o reabrirse.
 - **Definir mundos** vinculados a campañas: texto en borrador o final, y **plantilla de imágenes** (mapa mundial, mapas locales, emblemas, retratos) generables **bajo demanda** mediante la API de imágenes de OpenAI cuando está habilitado.
 
-El aislamiento de datos en el MVP se hace con un **UUID de propietario local** (`LOCAL_OWNER_UUID`), sin sistema de login todavía.
+Los datos se aislan **por usuario registrado**: cada cuenta tiene su propio `owner_id` (UUID) y solo ve mundos, campañas, ajustes OpenAI, trabajos RAG y la **colección de embeddings** que le corresponden. La API exige **JWT** (`Authorization: Bearer …`) salvo en registro e inicio de sesión.
 
 ---
 
@@ -57,7 +57,7 @@ Dependencias Python declaradas en `requirements.txt` (incluye paquetes LangChain
 - **Python 3.10+** (recomendado 3.11).
 - **Node.js** (LTS recomendado) y **npm**, para el frontend React en `frontend/`.
 - **PostgreSQL** con la extensión **`vector`** (pgvector).
-- Cuenta **OpenAI** y variable **`OPENAI_API_KEY`** para chat, embeddings e (opcionalmente) generación de imágenes.
+- Cuenta **OpenAI** (la clave de API se configura en **Ajustes** de la aplicación, no en `.env`) para chat, embeddings e (opcionalmente) generación de imágenes.
 
 ---
 
@@ -101,8 +101,10 @@ Copia `.env.example` a `.env` y completa al menos:
 | Variable | Descripción |
 |----------|-------------|
 | `POSTGRES_URL` | Cadena SQLAlchemy, p. ej. `postgresql+psycopg://usuario:password@localhost:5432/nombre_bd` |
-| `OPENAI_API_KEY` | Respaldo global (chat, embeddings, imágenes). Si en **Ajustes** guardas una clave para tu `LOCAL_OWNER_UUID`, esa tiene **prioridad** en la API. Sin ninguna de las dos, las rutas de IA responden 400 pidiendo configurar la clave. |
-| `LOCAL_OWNER_UUID` | UUID del “propietario” local (MVP sin login); también determina la fila en `owner_settings` donde se guarda la clave desde la UI. |
+| `JWT_SECRET` | Secreto para firmar tokens de acceso; **obligatorio cambiarlo en producción**. |
+| `JWT_EXPIRE_MINUTES` | Validez del token (por defecto 10080 ≈ 7 días). |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Opcionales: si ambas están definidas, al **arrancar la API** se crea (o se actualiza) un usuario **administrador** con acceso a los recursos de todos los usuarios. |
+| `RAG_COLLECTION` | Nombre de colección por defecto para los **scripts** `ingest_pdf` / `ingest_pdfs` **sin** `--owner-id`. Con `--owner-id`, la web y el CLI comparten la colección de **manuales** (`rag_u_<hex>_manuals`). La colección de **referencias de campaña** es `rag_u_<hex>_campaign` (material generado y consultas amplias). |
 
 Opcionales frecuentes:
 
@@ -115,7 +117,8 @@ Opcionales frecuentes:
 | `OPENAI_IMAGE_MODEL` | Imágenes (por defecto `dall-e-3`) |
 | `WORLD_IMAGE_GENERATION` | `true`/`false`: habilita o deshabilita llamadas a la API de imágenes para mundos |
 | `POSTGRES_TEST_URL` | Base de datos **aparte** para tests automatizados |
-| `HF_TOKEN` | Opcional: token de Hugging Face si usas flujos que descargan modelos con avisos de rate limit |
+| `INGEST_WORKER_AUTOSTART` | `true`/`false` (por defecto `true`): si es `true`, uvicorn lanza proceso(s) de ingesta RAG. Pon `false` si ejecutas el worker a mano o en otro contenedor (p. ej. Compose). |
+| `INGEST_WORKER_COUNT` | Entero `0`–`32` (por defecto `1`): número de subprocesos `ingest_worker` que arranca uvicorn. `0` no lanza ninguno (útil con `INGEST_WORKER_AUTOSTART=true` si solo quieres desactivar workers sin tocar el flag). Varias instancias comparten la misma cola en BD (`SKIP LOCKED`). |
 
 ---
 
@@ -140,7 +143,7 @@ Ejecutar **desde la raíz del repo**, con el venv activado y `POSTGRES_URL` defi
 ## Ingesta de PDFs (RAG)
 
 1. Coloca los **PDF** en `backend/data/` (también en subcarpetas; la búsqueda es recursiva).
-2. Con el entorno configurado (`POSTGRES_URL`, `OPENAI_API_KEY`), ejecuta desde la raíz:
+2. Con `POSTGRES_URL` configurada y una **clave OpenAI** guardada en **Ajustes** (para embeddings), ejecuta desde la raíz:
 
 **Todos los PDFs bajo `backend/data/`:**
 
@@ -154,6 +157,14 @@ python -m backend.scripts.ingest_pdf
 python -m backend.scripts.ingest_pdf --pdf backend/data/manual.pdf
 ```
 
+**Misma colección de manuales que la aplicación web** (recomendado para **Consultas → Reglas**): usa el UUID de tu usuario (véase **Ajustes** / `GET /api/auth/me`) con `--owner-id`:
+
+```bash
+python -m backend.scripts.ingest_pdf --pdf backend/data/manual.pdf --owner-id xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+Sin `--owner-id`, el script usa `RAG_COLLECTION` (p. ej. `rules_5e`), **distinta** de la colección de manuales por usuario (`rag_u_<hex>_manuals`), y las consultas desde la UI en modo **Reglas** no verán esos documentos.
+
 **Script alternativo** (`ingest_pdfs`) para varias rutas o otro directorio:
 
 ```bash
@@ -161,6 +172,7 @@ python -m backend.scripts.ingest_pdfs --dir backend/data
 ```
 
 - Los PDFs nuevos **se añaden** al índice sin borrar los existentes.
+- El manifiesto local (`backend/storage/ingest_manifest.json`) evita re-embeddings innecesarios, pero si vacías Postgres o recreas las tablas vectoriales, la ingesta **vuelve a ejecutarse** al detectar que ya no hay fragmentos en la colección.
 - Reingestar el **mismo** PDF (misma ruta) no duplica chunks salvo que el archivo cambie o uses `--force`.
 - **`--force`**: reindexa agresivamente; en escenarios con un solo PDF puede recrear la colección de ese documento. Si cambias el modelo de embeddings, conviene reindexar con coherencia (p. ej. `--force` o limpieza acorde).
 
@@ -182,11 +194,13 @@ uvicorn backend.app.main:app --reload
 
 Por defecto la API queda en **http://127.0.0.1:8000**.
 
-Para que la **subida de manuales** (RAG) avance desde la UI, arranca además el worker de cola (otra terminal, misma raíz del repo y mismo `.env`):
+La **indexación RAG** (cola de manuales subidos desde la UI) la procesa uno o más **workers** que, por defecto (**`INGEST_WORKER_AUTOSTART=true`**, **`INGEST_WORKER_COUNT=1`**), **uvicorn arranca** al levantar la API. Puedes subir el paralelismo con `INGEST_WORKER_COUNT` (p. ej. `3`). No necesitas una segunda terminal salvo que desactives el autostart (`INGEST_WORKER_AUTOSTART=false`) y entonces ejecutes a mano:
 
 ```bash
 python -m backend.scripts.ingest_worker
 ```
+
+En **Docker Compose**, el servicio `ingest-worker` ya corre el worker; el contenedor del API lleva `INGEST_WORKER_AUTOSTART=false` para no duplicar procesos.
 
 Al **arrancar**, el worker pasa de nuevo a «En cola» los trabajos que quedaron en «Procesando» (reinicio o corte), para reintentar la indexación.
 
@@ -224,7 +238,7 @@ Despliegue con **cuatro servicios**: Postgres (**pgvector**), API FastAPI, **wor
 
 **Requisitos:** [Docker](https://docs.docker.com/get-docker/) y Docker Compose v2.
 
-1. Copia `.env.example` a `.env` y completa al menos **`OPENAI_API_KEY`** (y el resto de variables que uses). El fichero **`.env`** debe existir para que Compose pueda cargarlo en los servicios `backend` e `ingest-worker`.
+1. Copia `.env.example` a `.env` y completa al menos **`JWT_SECRET`** (y el resto de variables que uses; opcionalmente `ADMIN_USERNAME` / `ADMIN_PASSWORD`). El fichero **`.env`** debe existir para que Compose pueda cargarlo en los servicios `backend` e `ingest-worker`. Las claves de **OpenAI** y **Hugging Face** se configuran en la aplicación (**Ajustes**), no en el entorno.
 2. **`POSTGRES_URL` dentro del contenedor** la fija `docker-compose.yml` apuntando al servicio `db` (`dndhelper` / `dndhelper` / base `dndhelper`). La variable de tu `.env` para Postgres **se sustituye** en Compose al arrancar el backend y el worker.
 3. Construcción y arranque:
 
@@ -245,7 +259,7 @@ docker compose run --rm backend alembic upgrade head
 
 Los PDFs para RAG pueden dejarse en **`backend/data/`** en el host: el compose monta esa carpeta en el contenedor del backend **y** del worker (subidas desde la UI y manifiestos de ingesta). Las **imágenes de mundos** (y el resto de ficheros bajo `backend/storage/`, p. ej. `world_images/`) también se persisten mediante el volumen **`./backend/storage` → `/app/backend/storage`**.
 
-La subida desde **Manuales** encola un trabajo en BD; el proceso **`ingest-worker`** (`python -m backend.scripts.ingest_worker`) lo toma y actualiza el porcentaje de progreso. Sin ese servicio (o sin ejecutar el worker en local), los trabajos quedarán en «En cola». Cada vez que el worker **arranca**, recupera trabajos que hubieran quedado en «Procesando» y los vuelve a encolar.
+La subida desde **Documentos** encola un trabajo en BD; el proceso **`ingest-worker`** (`python -m backend.scripts.ingest_worker`) lo toma y actualiza el porcentaje de progreso. Sin ese servicio (o sin ejecutar el worker en local), los trabajos quedarán en «En cola». Cada vez que el worker **arranca**, recupera trabajos que hubieran quedado en «Procesando» y los vuelve a encolar.
 
 La imagen del backend es **grande** (PyTorch / `sentence-transformers`). En Compose se fuerza **`EMBEDDINGS_DEVICE=cpu`**; para GPU haría falta configurar el runtime de NVIDIA y una imagen base distinta.
 
@@ -301,10 +315,11 @@ dndhelper/
 
 ## Funcionalidades principales
 
-### Consultas RAG sobre PDFs
+### Consultas RAG
 
-- Endpoint **`POST /api/query_rules`**: pregunta en JSON (`question`), respuesta con **`answer`** y lista **`sources`** (origen y página de los fragmentos usados).
-- Requiere PDFs ingestados y colección vectorial en Postgres.
+- Endpoint **`POST /api/query_rules`**: cuerpo JSON con **`question`**, **`scope`** (`rules` \| `campaigns_general` \| `campaign`) y, si `scope` es `campaign`, **`campaign_id`**. Respuesta **`answer`** y **`sources`** (fragmentos de recuperación semántica).
+- Modo **Reglas**: índice de manuales. **Campañas en general** / **campaña concreta**: índice de referencias de campaña; en el modo campaña se añade además el texto completo de la campaña (brief, historia, outline, sesiones, mundo) como contexto.
+- Para **Reglas** hacen falta documentos ingestados en la colección de manuales.
 
 ### Campañas
 
@@ -326,12 +341,15 @@ dndhelper/
 
 ### Interfaz de usuario
 
-- **React**: flujo principal en `/campaigns`, `/worlds`, `/rules` (consultas RAG), `/manuals` (subida de PDFs al índice), **Ajustes** en `/settings` (clave OpenAI), etc. (ver `frontend/src/main.tsx`).
+- **React**: flujo principal en `/campaigns`, `/worlds`, `/consultas` (consultas RAG; `/rules` redirige aquí), `/documentos` (subida de documentos al índice RAG; elige colección manuales o referencias de campaña; `/manuals` redirige aquí), **Ajustes** en `/settings` (claves OpenAI y Hugging Face), etc. (ver `frontend/src/main.tsx`).
 - **Admin** en `/admin`: interfaz mínima servida por FastAPI.
 
-### Aislamiento por propietario
+### Usuarios y aislamiento
 
-- Todas las entidades relevantes llevan `owner_id` alineado con **`LOCAL_OWNER_UUID`** hasta que exista autenticación real.
+- Registro e inicio de sesión: la UI usa `/register` y `/login`; la API expone `POST /api/auth/register`, `POST /api/auth/login` y `GET /api/auth/me`.
+- **Administrador:** si defines `ADMIN_USERNAME` y `ADMIN_PASSWORD` en `.env`, al arrancar la API se crea un usuario con `is_admin=true` que puede listar y operar sobre **cualquier** recurso (campañas, mundos, trabajos RAG, etc.). En rutas RAG, el admin puede indicar el propietario objetivo en el cuerpo o formulario (`target_owner_id`, `for_owner_id`).
+- Las tablas de dominio usan `owner_id` = `users.id`. Los PDFs subidos van a `backend/data/uploads/<owner_id>/`.
+- El índice RAG (pgvector) es **por usuario**: colección `rag_u_<uuid sin guiones>`; las consultas en **Reglas** solo buscan en la colección del usuario autenticado (salvo admin con `target_owner_id`).
 
 ---
 
@@ -357,17 +375,26 @@ export POSTGRES_TEST_URL="postgresql+psycopg://user:pass@host:5432/db_test"
 
 ## API y referencia rápida
 
-### Ajustes (clave OpenAI por propietario)
+### Autenticación
 
-- `GET /api/settings` — estado (`has_stored_openai_key`, `env_openai_key_configured`; no se devuelve el secreto).
-- `PUT /api/settings/openai` — cuerpo `{"openai_api_key": "sk-..."}`; persiste para `LOCAL_OWNER_UUID`.
-- `DELETE /api/settings/openai` — borra la clave guardada en BD (sigue pudiendo usarse `OPENAI_API_KEY` del entorno si existe).
+- `POST /api/auth/register` — cuerpo `{"username": "...", "password": "..."}`; crea usuario (contraseña con hash bcrypt) y devuelve `access_token` + datos públicos del usuario.
+- `POST /api/auth/login` — mismo cuerpo; devuelve token si las credenciales son válidas.
+- `GET /api/auth/me` — requiere `Authorization: Bearer <token>`; devuelve `id`, `username` e `is_admin`.
+
+### Ajustes (claves por usuario)
+
+- `GET /api/settings` — estado (`has_stored_openai_key`, `has_stored_hf_token`; no se devuelven secretos).
+- `PUT /api/settings/openai` — cuerpo `{"openai_api_key": "sk-..."}`; persiste para el usuario autenticado.
+- `DELETE /api/settings/openai` — borra la clave OpenAI guardada en BD.
+- `PUT /api/settings/hf` — cuerpo `{"hf_token": "hf_..."}`; token de Hugging Face Hub (opcional).
+- `DELETE /api/settings/hf` — borra el token HF guardado.
 
 ### RAG
 
-- `POST /api/query_rules` — Pregunta sobre PDFs indexados.
-- `POST /api/upload_pdf` — Subida multipart (`file`) de un PDF; lo guarda en `backend/data/uploads/<LOCAL_OWNER_UUID>/` con nombre único por trabajo, crea una fila en `ingest_jobs` y responde **202** con `job_id` (la indexación la hace el worker; requiere clave OpenAI en el momento de la subida).
+- `POST /api/query_rules` — Cuerpo `question`, `scope` (`rules` \| `campaigns_general` \| `campaign`), opcional `campaign_id` si `scope=campaign`, opcional `target_owner_id` (admin). Las subidas van al índice de **manuales**; las referencias de campaña se reindexan al consultar (y desde la generación de contenido).
+- `POST /api/upload_pdf` — Subida multipart: campo **`rag_target`** (`manuals` \| `campaign`), **`files`** repetido (uno o más documentos PDF, TXT o DOCX); guarda en `backend/data/uploads/<user_id>/`, crea una fila en `ingest_jobs` por fichero (con la colección destino en `collection_name`) y responde **202** con `{ "queued": [...], "errors": [...] }`. El campo `file` (singular) sigue admitido por compatibilidad. La indexación la hace el worker en la colección elegida (**manuales** o **referencias de campaña**).
 - `GET /api/ingest_jobs?limit=50` — Lista de trabajos del propietario: `status` (`queued` | `processing` | `done` | `failed`), `progress_percent`, `phase_label`, y al terminar `outcome` (`indexed` | `unchanged` | `empty`), `message`, metadatos.
+- `POST /api/rag/clear` — Cuerpo `{"targets": ["manuals", "campaign"]}` (uno o ambos); opcional `target_owner_id` (admin). Borra la(s) colección(es) PGVector, trabajos de ingesta asociados, ficheros en `uploads/<usuario>/` y manifiestos locales (`ingest_manifest.json`, `campaign_rag_meta.json` para las campañas del usuario).
 
 ### Campañas (extracto)
 

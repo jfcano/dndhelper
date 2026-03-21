@@ -5,7 +5,7 @@ from uuid import UUID
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class WorldCreate(BaseModel):
@@ -193,16 +193,23 @@ class SessionOut(BaseModel):
 
 
 class OwnerSettingsOut(BaseModel):
-    """Estado de la clave OpenAI (nunca se devuelve el secreto)."""
+    """Estado de claves en Ajustes (nunca se devuelven secretos)."""
 
     has_stored_openai_key: bool
-    env_openai_key_configured: bool
+    has_stored_hf_token: bool
 
 
 class OwnerSettingsOpenAIUpdate(BaseModel):
     openai_api_key: str = Field(
         min_length=8,
         description="Clave de API de OpenAI (sk-...).",
+    )
+
+
+class OwnerSettingsHFUpdate(BaseModel):
+    hf_token: str = Field(
+        min_length=4,
+        description="Token de Hugging Face (Hub) para descargas sin rate limit agresivo.",
     )
 
 
@@ -233,9 +240,77 @@ class PdfEnqueueResponse(BaseModel):
     original_filename: str
 
 
+class UploadRagFileError(BaseModel):
+    filename: str
+    detail: str
+
+
+class UploadRagBatchResponse(BaseModel):
+    """Respuesta de subida de uno o varios manuales (PDF, TXT, DOCX)."""
+
+    queued: list[PdfEnqueueResponse]
+    errors: list[UploadRagFileError] = Field(default_factory=list)
+
+
 class IngestJobDeleteResponse(BaseModel):
     """Resultado de cancelar o borrar un trabajo de ingesta."""
 
     action: Literal["deleted", "cancel_requested"]
     job_id: UUID
+
+
+class RagClearRequest(BaseModel):
+    """Vaciar colecciones vectoriales del usuario y borrar trabajos/ficheros de subida asociados."""
+
+    targets: list[Literal["manuals", "campaign"]] = Field(
+        ...,
+        min_length=1,
+        description='Uno o ambos: "manuals" (manuales/reglas) y/o "campaign" (referencias de campaña).',
+    )
+    target_owner_id: UUID | None = Field(
+        default=None,
+        description="Solo administradores: UUID del usuario cuyas colecciones se vacían.",
+    )
+
+
+class RagClearResponse(BaseModel):
+    targets_cleared: list[str]
+    ingest_jobs_removed: int
+    manifest_ingest_keys_removed: int
+    campaign_manifest_entries_removed: int
+    collections_dropped: list[str]
+
+
+class UserRegister(BaseModel):
+    username: str = Field(min_length=3, max_length=32, pattern=r"^[a-zA-Z0-9_]+$")
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _strip_username(cls, v: object) -> object:
+        return v.strip() if isinstance(v, str) else v
+
+
+class UserLogin(BaseModel):
+    username: str = Field(min_length=1, max_length=32)
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _strip_username(cls, v: object) -> object:
+        return v.strip() if isinstance(v, str) else v
+
+
+class UserPublic(BaseModel):
+    id: UUID
+    username: str
+    is_admin: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AuthTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserPublic
 

@@ -21,3 +21,15 @@ def upsert_openai_api_key(db: Session, owner_id: UUID, openai_api_key: str | Non
     db.commit()
     db.refresh(row)
     return row
+
+
+def upsert_hf_token(db: Session, owner_id: UUID, hf_token: str | None) -> OwnerSettings:
+    row = get_owner_settings(db, owner_id)
+    if row is None:
+        row = OwnerSettings(owner_id=owner_id, hf_token=hf_token)
+        db.add(row)
+    else:
+        row.hf_token = hf_token
+    db.commit()
+    db.refresh(row)
+    return row

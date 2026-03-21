@@ -5,21 +5,32 @@ import './index.css'
 import './ui.css'
 import './components/icon-buttons.css'
 import { Layout } from './components/Layout'
+import { RequireAuth } from './components/RequireAuth'
 import { CampaignsPage } from './pages/CampaignsPage'
 import { CampaignDetailPage } from './pages/CampaignDetailPage'
 import { WorldsPage } from './pages/WorldsPage'
 import { WorldDetailPage } from './pages/WorldDetailPage'
-import { ManualsUploadPage } from './pages/ManualsUploadPage'
-import { RulesRagPage } from './pages/RulesRagPage'
+import { DocumentsUploadPage } from './pages/DocumentsUploadPage'
+import { ConsultasPage } from './pages/ConsultasPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { LoginPage } from './pages/LoginPage'
+import { RegisterPage } from './pages/RegisterPage'
 
 const router = createBrowserRouter([
+  { path: '/login', element: <LoginPage /> },
+  { path: '/register', element: <RegisterPage /> },
   {
-    element: <Layout />,
+    element: (
+      <RequireAuth>
+        <Layout />
+      </RequireAuth>
+    ),
     children: [
       { path: '/', element: <Navigate to="/campaigns" replace /> },
-      { path: '/rules', element: <RulesRagPage /> },
-      { path: '/manuals', element: <ManualsUploadPage /> },
+      { path: '/consultas', element: <ConsultasPage /> },
+      { path: '/rules', element: <Navigate to="/consultas" replace /> },
+      { path: '/documentos', element: <DocumentsUploadPage /> },
+      { path: '/manuals', element: <Navigate to="/documentos" replace /> },
       { path: '/settings', element: <SettingsPage /> },
       { path: '/campaigns', element: <CampaignsPage /> },
       { path: '/campaigns/:id', element: <CampaignDetailPage /> },

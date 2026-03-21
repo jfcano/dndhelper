@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
+from uuid import UUID
 
 import pytest
 
@@ -9,7 +10,12 @@ from backend.app.services import generation_service
 
 
 def test_generate_campaign_story_draft_returns_markdown(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Evitar OpenAI y RAG reales.
+    # Evitar OpenAI, contexto HTTP y RAG reales.
+    monkeypatch.setattr(
+        generation_service,
+        "get_owner_id",
+        lambda: UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+    )
     monkeypatch.setattr(generation_service, "answer_question", lambda *args, **kwargs: {"answer": "CTX", "sources": []})
 
     class _LLM:

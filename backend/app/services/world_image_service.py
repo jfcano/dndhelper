@@ -412,7 +412,7 @@ def apply_slot_generation(
     Devuelve (nuevo_dict, ok, mensaje_error).
     """
     if not images_generation_allowed():
-        return assets, False, "Generación de imágenes desactivada o falta OPENAI_API_KEY."
+        return assets, False, "Generación de imágenes desactivada o falta clave OpenAI en Ajustes."
 
     out = copy.deepcopy(assets)
     ctx = out.get("_context")

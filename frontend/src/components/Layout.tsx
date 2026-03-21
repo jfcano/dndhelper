@@ -1,16 +1,24 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import './layout.css'
 import { HeaderOrnaments } from './HeaderOrnaments'
 import { IconBook, IconCog, IconGlobe, IconMoon, IconScroll, IconSun, IconUploadDoc } from './icons'
 import { applyThemeToDocument, readStoredTheme, type ThemeId } from '../lib/theme'
+import { api, type UserPublic } from '../lib/api'
+import { setAccessToken } from '../lib/authToken'
 
 export function Layout() {
+  const navigate = useNavigate()
+  const [me, setMe] = useState<UserPublic | null>(null)
   const [theme, setTheme] = useState<ThemeId>(() => readStoredTheme())
 
   useEffect(() => {
     applyThemeToDocument(theme)
   }, [theme])
+
+  useEffect(() => {
+    void api.getMe().then(setMe).catch(() => setMe(null))
+  }, [])
 
   function toggleTheme() {
     setTheme((t) => (t === 'dark' ? 'light' : 'dark'))
@@ -53,24 +61,40 @@ export function Layout() {
               </NavLink>
               <span className="nav-sep" role="separator" aria-hidden="true" />
               <NavLink
-                to="/rules"
+                to="/consultas"
                 className={({ isActive }) => (isActive ? 'active' : undefined)}
-                title="Consultas RAG sobre PDFs de reglas"
+                title="Consultas RAG: reglas, campañas o una campaña concreta"
               >
                 <IconBook className="nav-icon" />
-                Reglas
+                Consultas
               </NavLink>
               <NavLink
-                to="/manuals"
+                to="/documentos"
                 className={({ isActive }) => (isActive ? 'active' : undefined)}
-                title="Subir manuales en PDF para el índice RAG"
+                title="Subir documentos al índice RAG (manuales o referencias de campaña)"
               >
                 <IconUploadDoc className="nav-icon" />
-                Manuales
+                Documentos
               </NavLink>
             </nav>
             <nav className="nav nav--settings" aria-label="Configuración">
-              <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : undefined)} title="Clave API OpenAI">
+              {me ? (
+                <span className="nav-user muted" title={me.id}>
+                  {me.username}
+                  {me.is_admin ? <span className="nav-admin-badge"> admin</span> : null}
+                </span>
+              ) : null}
+              <button
+                type="button"
+                className="nav-logout linkish"
+                onClick={() => {
+                  setAccessToken(null)
+                  navigate('/login', { replace: true })
+                }}
+              >
+                Salir
+              </button>
+              <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : undefined)} title="Claves API (OpenAI, Hugging Face)">
                 <IconCog className="nav-icon" />
                 Ajustes
               </NavLink>

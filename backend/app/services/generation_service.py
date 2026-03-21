@@ -8,7 +8,9 @@ from langchain_openai import ChatOpenAI
 
 from backend.app.config import get_settings
 from backend.app.openai_key_runtime import get_openai_key_for_llm_and_embeddings
+from backend.app.owner_context import get_owner_id
 from backend.app.prompts.loader import render_prompt_template
+from backend.app.rag_collection import rag_campaign_refs_collection_for_owner, rag_manuals_collection_for_owner
 from backend.app.services.rag_service import answer_question
 from backend.app.prompts.campaign_generation import (
     campaign_players_prompt_es,
@@ -23,6 +25,16 @@ from backend.app.prompts.campaign_generation import (
     world_from_wizard_prompt_es,
     world_prompt_es,
 )
+
+
+def _rag_manuals_answer(question: str, *, k: int = 6) -> dict:
+    coll = rag_manuals_collection_for_owner(get_owner_id())
+    return answer_question(question, collection_name=coll, k=k)
+
+
+def _rag_campaign_answer(question: str, *, k: int = 6) -> dict:
+    coll = rag_campaign_refs_collection_for_owner(get_owner_id())
+    return answer_question(question, collection_name=coll, k=k)
 
 
 @dataclass(frozen=True)
@@ -458,7 +470,7 @@ def generate_campaign_story_draft(*, brief: dict, world: dict) -> str:
         "Incluye ideas coherentes con restricciones definidas en brief.constraints.notes si existen. "
         "Devuelve contexto que ayude a redactar secciones de historia para un DM."
     )
-    rag = answer_question(rag_question, k=6)
+    rag = _rag_campaign_answer(rag_question, k=6)
     rag_context = {
         "answer": rag.get("answer", ""),
         "sources": rag.get("sources", []),
@@ -533,9 +545,19 @@ def generate_player_characters(*, brief: dict, player_count: int) -> list[dict]:
 
     llm = _get_llm()
     safe_count = max(1, min(int(player_count), 8))
+    rag = _rag_manuals_answer(
+        "Resume reglas D&D 5e aplicables a creación de personajes jugadores: atributos, clase, trasfondo, equipo inicial.",
+        k=5,
+    )
+    rag_prefix = (
+        "Contexto recuperado de manuales/reglas (RAG):\n"
+        f"{str(rag.get('answer', '') or '').strip()[:6000]}\n\n"
+        if str(rag.get("answer", "") or "").strip()
+        else ""
+    )
     messages = [
         ("system", system_rules_es()),
-        ("user", campaign_players_prompt_es(brief=brief, player_count=safe_count)),
+        ("user", rag_prefix + campaign_players_prompt_es(brief=brief, player_count=safe_count)),
     ]
     raw = _parse_json(llm.invoke(messages).content)
     players = raw.get("players")
@@ -608,7 +630,7 @@ def autogenerate_world_wizard_step(*, step: int, wizard: dict[str, Any]) -> dict
             "__OUTPUT_HINT_JSON__": "{}",
         },
     )[:1500]
-    rag = answer_question(question, k=6)
+    rag = _rag_campaign_answer(question, k=6)
     rag_context = {
         "answer": rag.get("answer", ""),
         "sources": rag.get("sources", []),
@@ -783,7 +805,7 @@ def autogenerate_campaign_wizard_step(*, step: int, wizard: dict[str, Any]) -> d
         rag_context={},
         output_hint={"note": "Consulta breve para recuperación"},
     )[:1500]
-    rag = answer_question(rag_question, k=6)
+    rag = _rag_campaign_answer(rag_question, k=6)
     rag_context = {
         "answer": rag.get("answer", ""),
         "sources": rag.get("sources", []),

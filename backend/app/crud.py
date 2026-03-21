@@ -24,18 +24,18 @@ def create_campaign(db: Session, owner_id: UUID, payload: CampaignCreate) -> Cam
     return obj
 
 
-def list_campaigns(db: Session, owner_id: UUID, *, limit: int = 50, offset: int = 0) -> list[Campaign]:
-    stmt = (
-        select(Campaign)
-        .where(Campaign.owner_id == owner_id)
-        .order_by(Campaign.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+def list_campaigns(
+    db: Session, owner_id: UUID, *, limit: int = 50, offset: int = 0, admin: bool = False
+) -> list[Campaign]:
+    stmt = select(Campaign).order_by(Campaign.created_at.desc()).limit(limit).offset(offset)
+    if not admin:
+        stmt = stmt.where(Campaign.owner_id == owner_id)
     return list(db.execute(stmt).scalars().all())
 
 
-def get_campaign(db: Session, owner_id: UUID, campaign_id: UUID) -> Campaign | None:
+def get_campaign(db: Session, owner_id: UUID, campaign_id: UUID, *, admin: bool = False) -> Campaign | None:
+    if admin:
+        return db.get(Campaign, campaign_id)
     stmt = select(Campaign).where(Campaign.id == campaign_id, Campaign.owner_id == owner_id)
     return db.execute(stmt).scalars().first()
 
@@ -55,8 +55,10 @@ def delete_campaign(db: Session, obj: Campaign) -> None:
     db.commit()
 
 
-def create_session(db: Session, owner_id: UUID, campaign_id: UUID, payload: SessionCreate) -> CampaignSession:
-    campaign = get_campaign(db, owner_id, campaign_id)
+def create_session(
+    db: Session, owner_id: UUID, campaign_id: UUID, payload: SessionCreate, *, admin: bool = False
+) -> CampaignSession:
+    campaign = get_campaign(db, owner_id, campaign_id, admin=admin)
     if not campaign:
         raise LookupError("Campaign no encontrada.")
     obj = CampaignSession(
@@ -74,9 +76,9 @@ def create_session(db: Session, owner_id: UUID, campaign_id: UUID, payload: Sess
 
 
 def list_sessions_by_campaign(
-    db: Session, owner_id: UUID, campaign_id: UUID, *, limit: int = 50, offset: int = 0
+    db: Session, owner_id: UUID, campaign_id: UUID, *, limit: int = 50, offset: int = 0, admin: bool = False
 ) -> list[CampaignSession]:
-    if not get_campaign(db, owner_id, campaign_id):
+    if not get_campaign(db, owner_id, campaign_id, admin=admin):
         raise LookupError("Campaign no encontrada.")
     stmt = (
         select(CampaignSession)
@@ -89,29 +91,32 @@ def list_sessions_by_campaign(
 
 
 def list_sessions_for_owner(
-    db: Session, owner_id: UUID, *, limit: int = 50, offset: int = 0
+    db: Session, owner_id: UUID, *, limit: int = 50, offset: int = 0, admin: bool = False
 ) -> list[CampaignSession]:
     """Todas las sesiones del propietario (cualquier campaña), ordenadas por campaña y número de sesión."""
     stmt = (
         select(CampaignSession)
         .join(Campaign, Campaign.id == CampaignSession.campaign_id)
-        .where(Campaign.owner_id == owner_id)
         .order_by(Campaign.name.asc(), CampaignSession.session_number.asc(), CampaignSession.created_at.asc())
         .limit(limit)
         .offset(offset)
     )
+    if not admin:
+        stmt = stmt.where(Campaign.owner_id == owner_id)
     return list(db.execute(stmt).scalars().all())
 
 
-def delete_sessions_by_campaign(db: Session, owner_id: UUID, campaign_id: UUID) -> None:
-    if not get_campaign(db, owner_id, campaign_id):
+def delete_sessions_by_campaign(db: Session, owner_id: UUID, campaign_id: UUID, *, admin: bool = False) -> None:
+    if not get_campaign(db, owner_id, campaign_id, admin=admin):
         raise LookupError("Campaign no encontrada.")
     stmt = delete(CampaignSession).where(CampaignSession.campaign_id == campaign_id)
     db.execute(stmt)
     db.commit()
 
 
-def get_session(db: Session, owner_id: UUID, session_id: UUID) -> CampaignSession | None:
+def get_session(db: Session, owner_id: UUID, session_id: UUID, *, admin: bool = False) -> CampaignSession | None:
+    if admin:
+        return db.get(CampaignSession, session_id)
     stmt = (
         select(CampaignSession)
         .join(Campaign, Campaign.id == CampaignSession.campaign_id)

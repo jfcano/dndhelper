@@ -1,4 +1,18 @@
+import { getAccessToken } from './authToken'
+
 export type UUID = string
+
+export type UserPublic = {
+  id: UUID
+  username: string
+  is_admin?: boolean
+}
+
+export type AuthTokenResponse = {
+  access_token: string
+  token_type: string
+  user: UserPublic
+}
 
 /** Hueco de imagen: `planned_file` fijo; `file` se rellena tras generar con IA. */
 export type WorldVisualSlot = {
@@ -196,9 +210,12 @@ export type RagRulesResponse = {
   sources: RagRulesSource[]
 }
 
+/** Ámbito de la consulta en `/api/query_rules`. */
+export type QueryScope = 'rules' | 'campaigns_general' | 'campaign'
+
 export type OwnerSettingsStatus = {
   has_stored_openai_key: boolean
-  env_openai_key_configured: boolean
+  has_stored_hf_token: boolean
 }
 
 export type PdfEnqueueResponse = {
@@ -206,6 +223,16 @@ export type PdfEnqueueResponse = {
   status: 'queued'
   message: string
   original_filename: string
+}
+
+export type UploadRagFileError = {
+  filename: string
+  detail: string
+}
+
+export type UploadRagBatchResponse = {
+  queued: PdfEnqueueResponse[]
+  errors: UploadRagFileError[]
 }
 
 export type IngestJobRow = {
@@ -229,15 +256,38 @@ export type IngestJobDeleteResult = {
   job_id: string
 }
 
-/** Sube un PDF para indexación RAG (multipart; no usar `request` JSON). Respuesta 202 Accepted. */
-export async function uploadRulesPdf(file: File): Promise<PdfEnqueueResponse> {
+export type RagClearTarget = 'manuals' | 'campaign'
+
+export type RagClearResponse = {
+  targets_cleared: string[]
+  ingest_jobs_removed: number
+  manifest_ingest_keys_removed: number
+  campaign_manifest_entries_removed: number
+  collections_dropped: string[]
+}
+
+/** Destino de la subida: manuales/reglas o referencias de campaña (mismas colecciones que en Consultas). */
+export type RagUploadTarget = 'manuals' | 'campaign'
+
+/** Sube uno o más documentos (PDF, TXT, DOCX) para indexación RAG. Respuesta 202 Accepted. */
+export async function uploadDocuments(
+  files: File[],
+  options: { ragTarget: RagUploadTarget },
+): Promise<UploadRagBatchResponse> {
   const formData = new FormData()
-  formData.append('file', file)
+  formData.append('rag_target', options.ragTarget)
+  for (const f of files) {
+    formData.append('files', f)
+  }
+  const headers: Record<string, string> = {}
+  const t = getAccessToken()
+  if (t) headers.Authorization = `Bearer ${t}`
   let res: Response
   try {
     res = await fetch('/api/upload_pdf', {
       method: 'POST',
       body: formData,
+      headers,
     })
   } catch (e) {
     throw new ApiError(
@@ -255,7 +305,12 @@ export async function uploadRulesPdf(file: File): Promise<PdfEnqueueResponse> {
     }
     throw new ApiError(`API ${res.status} ${res.statusText}`, res.status, body)
   }
-  return (await res.json()) as PdfEnqueueResponse
+  return (await res.json()) as UploadRagBatchResponse
+}
+
+/** @deprecated Usar uploadDocuments con la colección deseada. */
+export async function uploadRulesDocuments(files: File[]): Promise<UploadRagBatchResponse> {
+  return uploadDocuments(files, { ragTarget: 'manuals' })
 }
 
 export class ApiError extends Error {
@@ -270,11 +325,18 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((init?.headers as Record<string, string>) ?? {}),
+  }
+  const tok = getAccessToken()
+  if (tok) headers.Authorization = `Bearer ${tok}`
+
   let res: Response
   try {
     res = await fetch(path, {
-      headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
       ...init,
+      headers,
     })
   } catch (e) {
     throw new ApiError(
@@ -296,10 +358,35 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  register: (username: string, password: string) =>
+    request<AuthTokenResponse>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+
+  login: (username: string, password: string) =>
+    request<AuthTokenResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+
+  getMe: () => request<UserPublic>('/api/auth/me'),
+
+  queryConsulta: (question: string, opts: { scope: QueryScope; campaign_id?: string | null }) =>
+    request<RagRulesResponse>(`/api/query_rules`, {
+      method: 'POST',
+      body: JSON.stringify({
+        question,
+        scope: opts.scope,
+        ...(opts.scope === 'campaign' && opts.campaign_id ? { campaign_id: opts.campaign_id } : {}),
+      }),
+    }),
+
+  /** @deprecated Usar queryConsulta con el ámbito adecuado. */
   queryRules: (question: string) =>
     request<RagRulesResponse>(`/api/query_rules`, {
       method: 'POST',
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, scope: 'rules' as const }),
     }),
 
   listRagIngestJobs: (limit = 50) =>
@@ -307,6 +394,12 @@ export const api = {
 
   deleteRagIngestJob: (jobId: string) =>
     request<IngestJobDeleteResult>(`/api/ingest_jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }),
+
+  clearRagCollections: (targets: RagClearTarget[]) =>
+    request<RagClearResponse>('/api/rag/clear', {
+      method: 'POST',
+      body: JSON.stringify({ targets }),
+    }),
 
   getOwnerSettings: () => request<OwnerSettingsStatus>('/api/settings'),
 
@@ -318,6 +411,17 @@ export const api = {
 
   deleteOwnerOpenaiKey: () =>
     request<OwnerSettingsStatus>('/api/settings/openai', {
+      method: 'DELETE',
+    }),
+
+  putOwnerHfToken: (hf_token: string) =>
+    request<OwnerSettingsStatus>('/api/settings/hf', {
+      method: 'PUT',
+      body: JSON.stringify({ hf_token }),
+    }),
+
+  deleteOwnerHfToken: () =>
+    request<OwnerSettingsStatus>('/api/settings/hf', {
       method: 'DELETE',
     }),
 
@@ -389,9 +493,12 @@ export const api = {
 
     let res: Response
     try {
+      const h: Record<string, string> = { 'Content-Type': 'application/json' }
+      const tok = getAccessToken()
+      if (tok) h.Authorization = `Bearer ${tok}`
       res = await fetch(path, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: h,
         body: '{}',
       })
     } catch (e) {

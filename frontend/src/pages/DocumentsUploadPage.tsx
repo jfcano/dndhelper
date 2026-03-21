@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { api, uploadRulesPdf, type IngestJobRow, type PdfEnqueueResponse } from '../lib/api'
+import { api, uploadDocuments, type IngestJobRow, type RagUploadTarget, type UploadRagBatchResponse } from '../lib/api'
 import { formatError } from '../lib/errors'
 
 function statusLabel(status: string): string {
@@ -33,11 +33,19 @@ function outcomeLabel(outcome: string | null): string {
   }
 }
 
-export function ManualsUploadPage() {
+function collectionKindLabel(collectionName: string | null): string {
+  if (!collectionName) return '—'
+  if (collectionName.endsWith('_campaign')) return 'Referencias de campaña'
+  if (collectionName.endsWith('_manuals')) return 'Manuales / reglas'
+  return collectionName
+}
+
+export function DocumentsUploadPage() {
   const inputRef = useRef<HTMLInputElement>(null)
+  const [ragTarget, setRagTarget] = useState<RagUploadTarget>('manuals')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [enqueueInfo, setEnqueueInfo] = useState<PdfEnqueueResponse | null>(null)
+  const [batchResult, setBatchResult] = useState<UploadRagBatchResponse | null>(null)
   const [jobs, setJobs] = useState<IngestJobRow[]>([])
   const [jobsError, setJobsError] = useState<string | null>(null)
   const [removingId, setRemovingId] = useState<string | null>(null)
@@ -63,9 +71,10 @@ export function ManualsUploadPage() {
   async function removeOrCancelJob(j: IngestJobRow) {
     const processing = j.status === 'processing'
     const cancelling = j.status === 'cancelled'
-    const msg = processing || cancelling
-      ? '¿Cancelar la indexación y quitar el PDF del servidor?'
-      : '¿Eliminar este trabajo y el PDF subido?'
+    const msg =
+      processing || cancelling
+        ? '¿Cancelar la indexación y quitar el fichero del servidor?'
+        : '¿Eliminar este trabajo y el fichero subido?'
     if (!window.confirm(msg)) return
     setRemovingId(j.id)
     setJobsError(null)
@@ -90,22 +99,27 @@ export function ManualsUploadPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     const input = inputRef.current
-    const file = input?.files?.[0]
-    if (!file) {
-      setError('Selecciona un archivo PDF.')
-      setEnqueueInfo(null)
+    const list = input?.files
+    if (!list || list.length === 0) {
+      setError('Selecciona uno o más archivos (.pdf, .txt o .docx).')
+      setBatchResult(null)
       return
     }
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setError('Solo se admiten archivos .pdf.')
-      setEnqueueInfo(null)
+    const arr = Array.from(list)
+    const bad = arr.filter((f) => {
+      const n = f.name.toLowerCase()
+      return !n.endsWith('.pdf') && !n.endsWith('.txt') && !n.endsWith('.docx')
+    })
+    if (bad.length > 0) {
+      setError('Solo se admiten archivos .pdf, .txt o .docx.')
+      setBatchResult(null)
       return
     }
     setBusy(true)
     setError(null)
-    setEnqueueInfo(null)
+    setBatchResult(null)
     try {
-      setEnqueueInfo(await uploadRulesPdf(file))
+      setBatchResult(await uploadDocuments(arr, { ragTarget }))
       if (input) input.value = ''
       void refreshJobs()
     } catch (err) {
@@ -118,25 +132,43 @@ export function ManualsUploadPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <h2>Manuales (RAG)</h2>
+        <h2>Documentos (RAG)</h2>
       </div>
 
       <p className="muted" style={{ marginTop: 0 }}>
-        Sube PDFs de reglas, compendios o lore para ampliar el índice vectorial. Los ficheros se guardan bajo{' '}
-        <code>backend/data/uploads/&lt;tu propietario&gt;/</code> y la indexación se hace en segundo plano (worker).
-        Requiere clave de OpenAI (Ajustes o entorno). El progreso aparece en la tabla inferior.
+        Sube PDF, TXT o DOCX para ampliar el índice vectorial. Elige si van a la colección de{' '}
+        <strong>manuales y reglas</strong> (consultas en modo Reglas, fichas, etc.) o a{' '}
+        <strong>referencias de campaña</strong> (material para consultas sobre campañas y generación asociada).
+        Puedes elegir <strong>varios archivos a la vez</strong>. Los ficheros se guardan bajo{' '}
+        <code>backend/data/uploads/&lt;tu usuario&gt;/</code> y la indexación se hace en segundo plano (worker).
+        Requiere clave de OpenAI en Ajustes. El progreso aparece en la tabla inferior.
       </p>
 
       <form className="card-panel rag-query-form" onSubmit={onSubmit}>
-        <label htmlFor="manual-pdf" className="muted" style={{ fontSize: '0.9rem' }}>
-          Archivo PDF
+        <label htmlFor="rag-target-docs" className="muted" style={{ fontSize: '0.9rem' }}>
+          Colección de destino
+        </label>
+        <select
+          id="rag-target-docs"
+          value={ragTarget}
+          onChange={(e) => setRagTarget(e.target.value as RagUploadTarget)}
+          disabled={busy}
+          style={{ marginBottom: '0.75rem', width: '100%', maxWidth: '28rem' }}
+        >
+          <option value="manuals">Manuales y reglas</option>
+          <option value="campaign">Referencias de campaña</option>
+        </select>
+
+        <label htmlFor="doc-files" className="muted" style={{ fontSize: '0.9rem' }}>
+          Archivos (.pdf, .txt, .docx)
         </label>
         <input
           ref={inputRef}
-          id="manual-pdf"
-          name="file"
+          id="doc-files"
+          name="files"
           type="file"
-          accept=".pdf,application/pdf"
+          accept=".pdf,.txt,.docx,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          multiple
           disabled={busy}
         />
         <div className="btn-row">
@@ -148,13 +180,36 @@ export function ManualsUploadPage() {
 
       {error ? <div className="error-banner">{error}</div> : null}
 
-      {enqueueInfo ? (
-        <div className="success-banner" style={{ marginTop: '1rem' }}>
-          <strong>Encolado</strong>
-          <div style={{ marginTop: '0.35rem' }}>{enqueueInfo.message}</div>
-          <div className="muted" style={{ marginTop: '0.5rem', fontSize: '0.88rem' }}>
-            Trabajo: <code>{enqueueInfo.job_id}</code> · Archivo: <code>{enqueueInfo.original_filename}</code>
-          </div>
+      {batchResult ? (
+        <div style={{ marginTop: '1rem' }}>
+          {batchResult.queued.length > 0 ? (
+            <div className="success-banner">
+              <strong>
+                {batchResult.queued.length === 1
+                  ? '1 documento encolado'
+                  : `${batchResult.queued.length} documentos encolados`}
+              </strong>
+              <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.25rem', fontSize: '0.88rem' }}>
+                {batchResult.queued.map((q) => (
+                  <li key={q.job_id}>
+                    <code>{q.original_filename}</code> — trabajo <code>{q.job_id}</code>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {batchResult.errors.length > 0 ? (
+            <div className="error-banner" style={{ marginTop: batchResult.queued.length > 0 ? '0.75rem' : 0 }}>
+              <strong>No se han subido algunos archivos</strong>
+              <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.25rem', fontSize: '0.88rem' }}>
+                {batchResult.errors.map((e, i) => (
+                  <li key={`${e.filename}-${i}`}>
+                    <code>{e.filename}</code>: {e.detail}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -170,6 +225,7 @@ export function ManualsUploadPage() {
             <thead>
               <tr>
                 <th style={{ textAlign: 'left', padding: '0.5rem 0.65rem' }}>Archivo</th>
+                <th style={{ textAlign: 'left', padding: '0.5rem 0.65rem' }}>Colección</th>
                 <th style={{ textAlign: 'left', padding: '0.5rem 0.65rem' }}>Estado</th>
                 <th style={{ textAlign: 'right', padding: '0.5rem 0.65rem' }}>%</th>
                 <th style={{ textAlign: 'left', padding: '0.5rem 0.65rem' }}>Detalle</th>
@@ -179,8 +235,8 @@ export function ManualsUploadPage() {
             <tbody>
               {jobs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="muted" style={{ padding: '0.75rem 0.65rem' }}>
-                    Aún no hay trabajos. Sube un PDF para verlo aquí.
+                  <td colSpan={6} className="muted" style={{ padding: '0.75rem 0.65rem' }}>
+                    Aún no hay trabajos. Sube documentos para verlos aquí.
                   </td>
                 </tr>
               ) : (
@@ -188,6 +244,9 @@ export function ManualsUploadPage() {
                   <tr key={j.id}>
                     <td style={{ padding: '0.5rem 0.65rem', verticalAlign: 'top' }}>
                       <code style={{ fontSize: '0.85rem' }}>{j.original_filename}</code>
+                    </td>
+                    <td style={{ padding: '0.5rem 0.65rem', verticalAlign: 'top', fontSize: '0.88rem' }}>
+                      {collectionKindLabel(j.collection_name)}
                     </td>
                     <td style={{ padding: '0.5rem 0.65rem', verticalAlign: 'top' }}>
                       {statusLabel(j.status)}
@@ -234,8 +293,8 @@ export function ManualsUploadPage() {
                         }}
                         title={
                           j.status === 'processing' || j.status === 'cancelled'
-                            ? 'Cancelar indexación y borrar PDF'
-                            : 'Borrar trabajo y PDF'
+                            ? 'Cancelar indexación y borrar fichero'
+                            : 'Borrar trabajo y fichero'
                         }
                       >
                         {j.status === 'processing' || j.status === 'cancelled'

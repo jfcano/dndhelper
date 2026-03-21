@@ -11,7 +11,7 @@ import json
 from backend.app import crud
 from backend.app.db import get_db
 from backend.app.models import Campaign, Session as CampaignSession, World
-from backend.app.owner_context import get_owner_id
+from backend.app.owner_context import get_owner_id, is_admin
 from backend.app.schemas import (
     CampaignBrief,
     CampaignCreate,
@@ -32,6 +32,17 @@ router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 _OpenAIDep = Annotated[str, Depends(require_openai_api_key_ctx)]
 
 _PLAYERS_KEY = "__generated_players__"
+
+
+def _ctx() -> tuple[UUID, bool]:
+    return get_owner_id(), is_admin()
+
+
+def _world_row_stmt(owner_id: UUID, world_id: UUID, adm: bool):
+    stmt = select(World).where(World.id == world_id)
+    if not adm:
+        stmt = stmt.where(World.owner_id == owner_id)
+    return stmt
 
 
 def _get_persisted_players(campaign: Campaign) -> list[dict]:
@@ -77,7 +88,7 @@ def _coerce_session_summary_for_db(raw: Any) -> str | None:
 
 @router.post("", response_model=CampaignOut)
 def create(payload: CampaignCreate, db: Session = Depends(get_db)) -> CampaignOut:
-    owner_id = get_owner_id()
+    owner_id, adm = _ctx()
     return crud.create_campaign(db, owner_id, payload)
 
 
@@ -85,14 +96,14 @@ def create(payload: CampaignCreate, db: Session = Depends(get_db)) -> CampaignOu
 def list_(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)) -> list[CampaignOut]:
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
-    owner_id = get_owner_id()
-    return crud.list_campaigns(db, owner_id, limit=limit, offset=offset)
+    owner_id, adm = _ctx()
+    return crud.list_campaigns(db, owner_id, limit=limit, offset=offset, admin=adm)
 
 
 @router.get("/{campaign_id}", response_model=CampaignOut)
 def get(campaign_id: UUID, db: Session = Depends(get_db)) -> CampaignOut:
-    owner_id = get_owner_id()
-    obj = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    obj = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not obj:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
     return obj
@@ -100,8 +111,8 @@ def get(campaign_id: UUID, db: Session = Depends(get_db)) -> CampaignOut:
 
 @router.patch("/{campaign_id}", response_model=CampaignOut)
 def patch(campaign_id: UUID, payload: CampaignUpdate, db: Session = Depends(get_db)) -> CampaignOut:
-    owner_id = get_owner_id()
-    obj = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    obj = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not obj:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
     data = payload.model_dump(exclude_unset=True)
@@ -119,8 +130,8 @@ def delete(
     cascade: bool = Query(default=False, description="Eliminar la campaña y todas sus sesiones y datos asociados."),
     db: Session = Depends(get_db),
 ) -> dict:
-    owner_id = get_owner_id()
-    obj = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    obj = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not obj:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
 
@@ -157,8 +168,8 @@ def delete(
 
 
 def _run_set_brief_with_generation(campaign_id: UUID, payload: CampaignBrief, db: Session) -> CampaignOut:
-    owner_id = get_owner_id()
-    obj = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    obj = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not obj:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
     obj.brief_draft = payload.model_dump()
@@ -171,7 +182,7 @@ def _run_set_brief_with_generation(campaign_id: UUID, payload: CampaignBrief, db
     if not obj.world_id:
         raise HTTPException(status_code=400, detail="La campaign debe tener world_id vinculado para generar el resumen.")
 
-    stmt = select(World).where(World.id == obj.world_id, World.owner_id == owner_id)
+    stmt = _world_row_stmt(owner_id, obj.world_id, adm)
     world = db.execute(stmt).scalars().first()
     if not world:
         raise HTTPException(status_code=404, detail="Mundo no encontrado (vinculado a la campaign).")
@@ -237,8 +248,8 @@ def approve_brief(
     _openai: _OpenAIDep,
     db: Session = Depends(get_db),
 ) -> CampaignOut:
-    owner_id = get_owner_id()
-    obj = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    obj = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not obj:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
     if not obj.brief_draft:
@@ -251,7 +262,7 @@ def approve_brief(
     if not obj.story_draft:
         if not obj.world_id:
             raise HTTPException(status_code=400, detail="La campaign debe tener world_id vinculado para aprobar el resumen.")
-        stmt = select(World).where(World.id == obj.world_id, World.owner_id == owner_id)
+        stmt = _world_row_stmt(owner_id, obj.world_id, adm)
         world = db.execute(stmt).scalars().first()
         if not world:
             raise HTTPException(status_code=404, detail="Mundo no encontrado (vinculado a la campaign).")
@@ -282,8 +293,8 @@ def approve_brief(
 
 @router.post("/{campaign_id}/reopen", response_model=CampaignOut)
 def reopen_campaign(campaign_id: UUID, db: Session = Depends(get_db)) -> CampaignOut:
-    owner_id = get_owner_id()
-    obj = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    obj = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not obj:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
 
@@ -310,8 +321,8 @@ def reopen_campaign(campaign_id: UUID, db: Session = Depends(get_db)) -> Campaig
 
 @router.patch("/{campaign_id}/story", response_model=CampaignOut)
 def patch_story(campaign_id: UUID, payload: CampaignStoryUpdate, db: Session = Depends(get_db)) -> CampaignOut:
-    owner_id = get_owner_id()
-    obj = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    obj = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not obj:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
     if obj.brief_status == "approved":
@@ -329,8 +340,8 @@ def patch_story(campaign_id: UUID, payload: CampaignStoryUpdate, db: Session = D
 
 @router.post("/{campaign_id}/story/reset", response_model=CampaignOut)
 def reset_campaign_story(campaign_id: UUID, db: Session = Depends(get_db)) -> CampaignOut:
-    owner_id = get_owner_id()
-    obj = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    obj = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not obj:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
     if obj.brief_status == "approved":
@@ -349,15 +360,16 @@ def generate_world_for_campaign(
     _openai: _OpenAIDep,
     db: Session = Depends(get_db),
 ) -> CampaignOut:
-    owner_id = get_owner_id()
-    campaign = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    campaign = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
     if campaign.brief_status != "approved" or not campaign.brief_final:
         raise HTTPException(status_code=400, detail="El brief debe estar aprobado antes de generar el mundo.")
 
     gw = generation_service.generate_world(brief=campaign.brief_final)
-    if is_world_name_taken(db, owner_id, gw.name):
+    wowner = campaign.owner_id
+    if is_world_name_taken(db, wowner, gw.name):
         raise HTTPException(
             status_code=409,
             detail=(
@@ -367,7 +379,7 @@ def generate_world_for_campaign(
         )
     draft_dict = gw.draft if isinstance(gw.draft, dict) else {}
     world = World(
-        owner_id=owner_id,
+        owner_id=wowner,
         name=gw.name,
         pitch=gw.pitch,
         tone=gw.tone,
@@ -398,8 +410,8 @@ def generate_outline_for_campaign(
     _openai: _OpenAIDep,
     db: Session = Depends(get_db),
 ) -> CampaignOut:
-    owner_id = get_owner_id()
-    campaign = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    campaign = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
     if campaign.brief_status != "approved" or not campaign.brief_final:
@@ -407,7 +419,7 @@ def generate_outline_for_campaign(
     if not campaign.world_id:
         raise HTTPException(status_code=400, detail="La campaign debe tener world_id antes de generar el outline.")
 
-    stmt = select(World).where(World.id == campaign.world_id, World.owner_id == owner_id)
+    stmt = _world_row_stmt(owner_id, campaign.world_id, adm)
     world = db.execute(stmt).scalars().first()
     if not world:
         raise HTTPException(status_code=404, detail="World no encontrado.")
@@ -438,8 +450,8 @@ def generate_sessions_for_campaign(
     session_count: int = 3,
     db: Session = Depends(get_db),
 ) -> list[SessionOut]:
-    owner_id = get_owner_id()
-    campaign = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    campaign = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
 
@@ -458,7 +470,9 @@ def generate_sessions_for_campaign(
             detail="El outline debe estar aprobado antes de generar sesiones.",
         )
 
-    existing_sessions = crud.list_sessions_by_campaign(db, owner_id, campaign_id, limit=1000, offset=0)
+    existing_sessions = crud.list_sessions_by_campaign(
+        db, owner_id, campaign_id, limit=1000, offset=0, admin=adm
+    )
     starting_session_number = max((s.session_number for s in existing_sessions), default=0) + 1
 
     sessions_raw = generation_service.generate_sessions(
@@ -484,6 +498,7 @@ def generate_sessions_for_campaign(
                 notes=None,
                 status="planned",
             ),
+            admin=adm,
         )
         created.append(obj)
 
@@ -497,8 +512,8 @@ def generate_players_for_campaign(
     player_count: int = 4,
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    owner_id = get_owner_id()
-    campaign = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    campaign = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
     if campaign.brief_status != "approved" or not campaign.brief_final:
@@ -527,8 +542,8 @@ def generate_players_for_campaign(
 
 @router.get("/{campaign_id}/players")
 def list_players_for_campaign(campaign_id: UUID, db: Session = Depends(get_db)) -> list[dict]:
-    owner_id = get_owner_id()
-    campaign = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    campaign = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
     return _get_persisted_players(campaign)
@@ -536,8 +551,8 @@ def list_players_for_campaign(campaign_id: UUID, db: Session = Depends(get_db)) 
 
 @router.delete("/{campaign_id}/players/{player_id}")
 def delete_player_for_campaign(campaign_id: UUID, player_id: str, db: Session = Depends(get_db)) -> list[dict]:
-    owner_id = get_owner_id()
-    campaign = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    campaign = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
 
@@ -552,8 +567,8 @@ def delete_player_for_campaign(campaign_id: UUID, player_id: str, db: Session = 
 
 @router.patch("/{campaign_id}/outline", response_model=CampaignOut)
 def patch_outline(campaign_id: UUID, payload: dict, db: Session = Depends(get_db)) -> CampaignOut:
-    owner_id = get_owner_id()
-    campaign = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    campaign = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
     campaign.outline_draft = json.dumps(payload, ensure_ascii=False)
@@ -566,8 +581,8 @@ def patch_outline(campaign_id: UUID, payload: dict, db: Session = Depends(get_db
 
 @router.post("/{campaign_id}/outline/approve", response_model=CampaignOut)
 def approve_outline(campaign_id: UUID, db: Session = Depends(get_db)) -> CampaignOut:
-    owner_id = get_owner_id()
-    campaign = crud.get_campaign(db, owner_id, campaign_id)
+    owner_id, adm = _ctx()
+    campaign = crud.get_campaign(db, owner_id, campaign_id, admin=adm)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign no encontrada.")
     if not campaign.outline_draft:

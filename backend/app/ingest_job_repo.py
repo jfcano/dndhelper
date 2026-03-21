@@ -8,6 +8,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.models import IngestJob
+from backend.app.rag_collection import rag_manuals_collection_for_owner
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +24,13 @@ def _safe_unlink_pdf(stored_path: str | None) -> None:
         logger.warning("No se pudo borrar el PDF en disco %s: %s", stored_path, e)
 
 
-def get_ingest_job_for_owner(db: Session, owner_id: uuid.UUID, job_id: uuid.UUID) -> IngestJob | None:
+def get_ingest_job_for_owner(
+    db: Session, owner_id: uuid.UUID, job_id: uuid.UUID, *, admin: bool = False
+) -> IngestJob | None:
     job = db.get(IngestJob, job_id)
-    if job is None or job.owner_id != owner_id:
+    if job is None:
+        return None
+    if not admin and job.owner_id != owner_id:
         return None
     return job
 
@@ -44,7 +49,9 @@ def create_job(
     owner_id: uuid.UUID,
     original_filename: str,
     stored_path: str,
+    target_collection_name: str | None = None,
 ) -> IngestJob:
+    coll = target_collection_name or rag_manuals_collection_for_owner(owner_id)
     row = IngestJob(
         id=job_id,
         owner_id=owner_id,
@@ -53,6 +60,7 @@ def create_job(
         status="queued",
         progress_percent=0,
         phase_label="En cola",
+        collection_name=coll,
     )
     db.add(row)
     db.commit()
@@ -81,13 +89,10 @@ def requeue_interrupted_processing_jobs(db: Session) -> int:
     return int(res.rowcount or 0)
 
 
-def list_jobs_for_owner(db: Session, owner_id: uuid.UUID, *, limit: int = 100) -> list[IngestJob]:
-    stmt = (
-        select(IngestJob)
-        .where(IngestJob.owner_id == owner_id)
-        .order_by(IngestJob.created_at.desc())
-        .limit(limit)
-    )
+def list_jobs_for_owner(db: Session, owner_id: uuid.UUID, *, limit: int = 100, admin: bool = False) -> list[IngestJob]:
+    stmt = select(IngestJob).order_by(IngestJob.created_at.desc()).limit(limit)
+    if not admin:
+        stmt = stmt.where(IngestJob.owner_id == owner_id)
     return list(db.execute(stmt).scalars().all())
 
 
@@ -148,7 +153,7 @@ def finalize_job_success(
     else:
         job.outcome = "indexed"
         job.message = (
-            f"Manual indexado: {chunks_indexed} fragmento(s) en la colección «{collection}»."
+            f"Documento indexado: {chunks_indexed} fragmento(s) en la colección «{collection}»."
         )
         job.phase_label = "Completado"
     job.error_detail = None

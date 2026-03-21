@@ -10,16 +10,16 @@ from backend.app.embeddings import get_embeddings
 logger = logging.getLogger(__name__)
 
 
-def get_vector_store() -> PGVector:
+def get_vector_store(*, collection_name: str) -> PGVector:
     settings = get_settings()
     embeddings = get_embeddings()
     if not settings.postgres_url:
         raise RuntimeError("Falta POSTGRES_URL en el entorno.")
 
-    logger.info("vector_store: PGVector collection=%s", settings.default_collection)
+    logger.info("vector_store: PGVector collection=%s", collection_name)
     return PGVector(
         embeddings=embeddings,
-        collection_name=settings.default_collection,
+        collection_name=collection_name,
         connection=settings.postgres_url,
         use_jsonb=True,
         create_extension=settings.postgres_create_extension,

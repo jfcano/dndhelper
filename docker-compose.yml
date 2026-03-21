@@ -24,6 +24,8 @@ services:
     environment:
       POSTGRES_URL: postgresql+psycopg://dndhelper:dndhelper@db:5432/dndhelper
       EMBEDDINGS_DEVICE: cpu
+      # El servicio «ingest-worker» ya indexa la cola; evitar un segundo worker dentro del contenedor del API.
+      INGEST_WORKER_AUTOSTART: "false"
     volumes:
       - ./backend/data:/app/backend/data
       - ./backend/storage:/app/backend/storage

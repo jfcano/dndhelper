@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from backend.app.db import get_db
 from backend.app.deps_openai import require_openai_api_key_ctx
 from backend.app.models import Campaign, World
-from backend.app.owner_context import get_owner_id
+from backend.app.owner_context import get_owner_id, is_admin
 from backend.app.schemas import (
     CampaignOut,
     WorldCreate,
@@ -30,12 +30,23 @@ _SAFE_IMAGE_FILE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*\.png$")
 
 router = APIRouter(prefix="/worlds", tags=["worlds"])
 
+
+def _ctx() -> tuple[UUID, bool]:
+    return get_owner_id(), is_admin()
+
+
+def _world_row_stmt(owner_id: UUID, world_id: UUID, adm: bool):
+    stmt = select(World).where(World.id == world_id)
+    if not adm:
+        stmt = stmt.where(World.owner_id == owner_id)
+    return stmt
+
 _OpenAIDep = Annotated[str, Depends(require_openai_api_key_ctx)]
 
 
 @router.post("", response_model=WorldOut)
 def create_world(payload: WorldCreate, db: Session = Depends(get_db)) -> WorldOut:
-    owner_id = get_owner_id()
+    owner_id, adm = _ctx()
     if is_world_name_taken(db, owner_id, payload.name):
         raise HTTPException(
             status_code=409,
@@ -54,7 +65,7 @@ def generate_world(
     _openai: _OpenAIDep,
     db: Session = Depends(get_db),
 ) -> WorldOut:
-    owner_id = get_owner_id()
+    owner_id, adm = _ctx()
     faction_names = {f.name.strip().lower() for f in payload.factions}
     missing = sorted(
         {
@@ -115,8 +126,8 @@ def generate_world_for_existing_world(
     _openai: _OpenAIDep,
     db: Session = Depends(get_db),
 ) -> WorldOut:
-    owner_id = get_owner_id()
-    stmt = select(World).where(World.id == world_id, World.owner_id == owner_id)
+    owner_id, adm = _ctx()
+    stmt = _world_row_stmt(owner_id, world_id, adm)
     obj = db.execute(stmt).scalars().first()
     if not obj:
         raise HTTPException(status_code=404, detail="World no encontrado.")
@@ -184,8 +195,8 @@ def generate_one_world_visual(
     _openai: _OpenAIDep,
     db: Session = Depends(get_db),
 ) -> WorldOut:
-    owner_id = get_owner_id()
-    stmt = select(World).where(World.id == world_id, World.owner_id == owner_id)
+    owner_id, adm = _ctx()
+    stmt = _world_row_stmt(owner_id, world_id, adm)
     obj = db.execute(stmt).scalars().first()
     if not obj:
         raise HTTPException(status_code=404, detail="World no encontrado.")
@@ -222,19 +233,21 @@ def autogenerate_world_wizard_step(
 
 @router.get("", response_model=list[WorldOut])
 def list_worlds(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)) -> list[WorldOut]:
-    owner_id = get_owner_id()
+    owner_id, adm = _ctx()
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
-    stmt = select(World).where(World.owner_id == owner_id).order_by(World.created_at.desc()).limit(limit).offset(offset)
+    stmt = select(World).order_by(World.created_at.desc()).limit(limit).offset(offset)
+    if not adm:
+        stmt = stmt.where(World.owner_id == owner_id)
     return list(db.execute(stmt).scalars().all())
 
 
 @router.get("/{world_id}/image/{filename}")
 def get_world_image(world_id: UUID, filename: str, db: Session = Depends(get_db)) -> FileResponse:
-    owner_id = get_owner_id()
+    owner_id, adm = _ctx()
     if not _SAFE_IMAGE_FILE.match(filename):
         raise HTTPException(status_code=400, detail="Nombre de imagen no válido.")
-    stmt = select(World).where(World.id == world_id, World.owner_id == owner_id)
+    stmt = _world_row_stmt(owner_id, world_id, adm)
     obj = db.execute(stmt).scalars().first()
     if not obj:
         raise HTTPException(status_code=404, detail="World no encontrado.")
@@ -256,8 +269,8 @@ def get_world_image(world_id: UUID, filename: str, db: Session = Depends(get_db)
 
 @router.get("/{world_id}", response_model=WorldOut)
 def get_world(world_id: UUID, db: Session = Depends(get_db)) -> WorldOut:
-    owner_id = get_owner_id()
-    stmt = select(World).where(World.id == world_id, World.owner_id == owner_id)
+    owner_id, adm = _ctx()
+    stmt = _world_row_stmt(owner_id, world_id, adm)
     obj = db.execute(stmt).scalars().first()
     if not obj:
         raise HTTPException(status_code=404, detail="World no encontrado.")
@@ -266,16 +279,15 @@ def get_world(world_id: UUID, db: Session = Depends(get_db)) -> WorldOut:
 
 @router.get("/{world_id}/usage")
 def get_world_usage(world_id: UUID, db: Session = Depends(get_db)) -> dict:
-    owner_id = get_owner_id()
-    stmt = select(World).where(World.id == world_id, World.owner_id == owner_id)
+    owner_id, adm = _ctx()
+    stmt = _world_row_stmt(owner_id, world_id, adm)
     obj = db.execute(stmt).scalars().first()
     if not obj:
         raise HTTPException(status_code=404, detail="World no encontrado.")
 
-    usage_stmt = select(func.count(Campaign.id)).where(
-        Campaign.owner_id == owner_id,
-        Campaign.world_id == world_id,
-    )
+    usage_stmt = select(func.count(Campaign.id)).where(Campaign.world_id == world_id)
+    if not adm:
+        usage_stmt = usage_stmt.where(Campaign.owner_id == owner_id)
     campaign_count = int(db.execute(usage_stmt).scalar_one() or 0)
     return {"campaign_count": campaign_count}
 
@@ -284,9 +296,9 @@ def get_world_usage(world_id: UUID, db: Session = Depends(get_db)) -> dict:
 def list_campaigns_for_world(
     world_id: UUID, limit: int = 50, offset: int = 0, db: Session = Depends(get_db)
 ) -> list[CampaignOut]:
-    owner_id = get_owner_id()
+    owner_id, adm = _ctx()
 
-    world_stmt = select(World).where(World.id == world_id, World.owner_id == owner_id)
+    world_stmt = _world_row_stmt(owner_id, world_id, adm)
     world_obj = db.execute(world_stmt).scalars().first()
     if not world_obj:
         raise HTTPException(status_code=404, detail="World no encontrado.")
@@ -294,26 +306,24 @@ def list_campaigns_for_world(
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
 
-    stmt = (
-        select(Campaign)
-        .where(Campaign.owner_id == owner_id, Campaign.world_id == world_id)
-        .order_by(Campaign.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    stmt = select(Campaign).where(Campaign.world_id == world_id).order_by(Campaign.created_at.desc()).limit(limit).offset(offset)
+    if not adm:
+        stmt = stmt.where(Campaign.owner_id == owner_id)
     return list(db.execute(stmt).scalars().all())
 
 
 @router.patch("/{world_id}", response_model=WorldOut)
 def patch_world(world_id: UUID, payload: WorldUpdate, db: Session = Depends(get_db)) -> WorldOut:
-    owner_id = get_owner_id()
-    stmt = select(World).where(World.id == world_id, World.owner_id == owner_id)
+    owner_id, adm = _ctx()
+    stmt = _world_row_stmt(owner_id, world_id, adm)
     obj = db.execute(stmt).scalars().first()
     if not obj:
         raise HTTPException(status_code=404, detail="World no encontrado.")
     data = payload.model_dump(exclude_unset=True)
     new_name = data.get("name")
-    if new_name is not None and is_world_name_taken(db, owner_id, str(new_name), exclude_world_id=world_id):
+    if new_name is not None and is_world_name_taken(
+        db, obj.owner_id, str(new_name), exclude_world_id=world_id
+    ):
         raise HTTPException(
             status_code=409,
             detail="Ya existe otro mundo con ese nombre.",
@@ -328,8 +338,8 @@ def patch_world(world_id: UUID, payload: WorldUpdate, db: Session = Depends(get_
 
 @router.post("/{world_id}/approve", response_model=WorldOut)
 def approve_world(world_id: UUID, db: Session = Depends(get_db)) -> WorldOut:
-    owner_id = get_owner_id()
-    stmt = select(World).where(World.id == world_id, World.owner_id == owner_id)
+    owner_id, adm = _ctx()
+    stmt = _world_row_stmt(owner_id, world_id, adm)
     obj = db.execute(stmt).scalars().first()
     if not obj:
         raise HTTPException(status_code=404, detail="World no encontrado.")
@@ -343,8 +353,8 @@ def approve_world(world_id: UUID, db: Session = Depends(get_db)) -> WorldOut:
 
 @router.post("/{world_id}/reopen", response_model=WorldOut)
 def reopen_world(world_id: UUID, db: Session = Depends(get_db)) -> WorldOut:
-    owner_id = get_owner_id()
-    stmt = select(World).where(World.id == world_id, World.owner_id == owner_id)
+    owner_id, adm = _ctx()
+    stmt = _world_row_stmt(owner_id, world_id, adm)
     obj = db.execute(stmt).scalars().first()
     if not obj:
         raise HTTPException(status_code=404, detail="World no encontrado.")
@@ -367,16 +377,15 @@ def delete_world(
     ),
     db: Session = Depends(get_db),
 ) -> dict:
-    owner_id = get_owner_id()
-    stmt = select(World).where(World.id == world_id, World.owner_id == owner_id)
+    owner_id, adm = _ctx()
+    stmt = _world_row_stmt(owner_id, world_id, adm)
     obj = db.execute(stmt).scalars().first()
     if not obj:
         raise HTTPException(status_code=404, detail="World no encontrado.")
 
-    usage_stmt = select(func.count(Campaign.id)).where(
-        Campaign.owner_id == owner_id,
-        Campaign.world_id == world_id,
-    )
+    usage_stmt = select(func.count(Campaign.id)).where(Campaign.world_id == world_id)
+    if not adm:
+        usage_stmt = usage_stmt.where(Campaign.owner_id == owner_id)
     campaign_count = int(db.execute(usage_stmt).scalar_one() or 0)
     if campaign_count > 0 and not cascade:
         raise HTTPException(
@@ -388,7 +397,9 @@ def delete_world(
         )
 
     if campaign_count > 0 and cascade:
-        camp_stmt = select(Campaign).where(Campaign.owner_id == owner_id, Campaign.world_id == world_id)
+        camp_stmt = select(Campaign).where(Campaign.world_id == world_id)
+        if not adm:
+            camp_stmt = camp_stmt.where(Campaign.owner_id == owner_id)
         for camp in db.execute(camp_stmt).scalars().all():
             db.delete(camp)
         db.flush()

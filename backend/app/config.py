@@ -15,8 +15,10 @@ class Settings:
     postgres_connect_timeout_s: int
     postgres_create_extension: bool
     default_collection: str
-    local_owner_uuid: str
-    openai_api_key: str | None
+    jwt_secret: str
+    jwt_expire_minutes: int
+    admin_username: str | None
+    admin_password: str | None
     openai_model: str
     openai_image_model: str
     world_image_generation_enabled: bool
@@ -24,6 +26,8 @@ class Settings:
     chunk_size: int
     chunk_overlap: int
     embeddings_device: str  # "cuda" o "cpu"
+    ingest_worker_autostart: bool  # si True, uvicorn lanza proceso(s) ingest_worker
+    ingest_worker_count: int  # número de subprocesos ingest_worker (1 por defecto; 0 = ninguno)
 
 
 def get_settings() -> Settings:
@@ -38,8 +42,10 @@ def get_settings() -> Settings:
         postgres_connect_timeout_s=int(os.getenv("POSTGRES_CONNECT_TIMEOUT_S", "10")),
         postgres_create_extension=os.getenv("POSTGRES_CREATE_EXTENSION", "true").strip().lower() in ("1", "true", "yes", "y", "on"),
         default_collection=os.getenv("RAG_COLLECTION", "rules_5e"),
-        local_owner_uuid=os.getenv("LOCAL_OWNER_UUID", "bec82f4c-14ae-43aa-8c40-f45d950517f1"),
-        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        jwt_secret=os.getenv("JWT_SECRET", "dev-cambiar-en-produccion-jwt-secret"),
+        jwt_expire_minutes=int(os.getenv("JWT_EXPIRE_MINUTES", "10080")),
+        admin_username=os.getenv("ADMIN_USERNAME", "").strip() or None,
+        admin_password=os.getenv("ADMIN_PASSWORD", "").strip() or None,
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         openai_image_model=os.getenv("OPENAI_IMAGE_MODEL", "dall-e-3"),
         world_image_generation_enabled=os.getenv("WORLD_IMAGE_GENERATION", "true").strip().lower()
@@ -48,5 +54,11 @@ def get_settings() -> Settings:
         chunk_size=int(os.getenv("RAG_CHUNK_SIZE", "1200")),
         chunk_overlap=int(os.getenv("RAG_CHUNK_OVERLAP", "200")),
         embeddings_device=os.getenv("EMBEDDINGS_DEVICE", "cuda"),
+        ingest_worker_autostart=os.getenv("INGEST_WORKER_AUTOSTART", "true").strip().lower()
+        in ("1", "true", "yes", "y", "on"),
+        ingest_worker_count=max(
+            0,
+            min(int(os.getenv("INGEST_WORKER_COUNT", "1")), 32),
+        ),
     )
 
