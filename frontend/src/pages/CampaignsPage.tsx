@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { Campaign } from '../lib/api'
+import { IconButton } from '../components/IconButton'
+import { IconPlus, IconTrash } from '../components/icons'
 import { formatError } from '../lib/errors'
 import { toSpanishStatus } from '../lib/statusLabels'
 
@@ -56,50 +58,65 @@ export function CampaignsPage() {
   const rows = useMemo(() => items ?? [], [items])
 
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-        <h2 style={{ margin: 0 }}>Campañas</h2>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => void onCreateCampaign()} disabled={creating}>
-            {creating ? 'Creando…' : 'Crear campaña'}
-          </button>
+    <div className="page">
+      <div className="page-head">
+        <h2>Campañas</h2>
+        <div className="btn-row">
+          <IconButton
+            label="Crear nueva campaña"
+            textShort="Nueva"
+            busy={creating}
+            busyLabel="Creando campaña…"
+            busyShort="…"
+            onClick={() => void onCreateCampaign()}
+          >
+            <IconPlus />
+          </IconButton>
         </div>
       </div>
 
-      {error && <div style={{ color: 'salmon' }}>{error}</div>}
-      {!items && !error && <div>Cargando…</div>}
+      {error && <div className="error-banner">{error}</div>}
+      {!items && !error && <div className="loading">Cargando…</div>}
 
       {items && (
-        <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ background: 'rgba(255,255,255,0.04)' }}>
+        <div className="table-shell">
+          <table className="data-table">
+            <thead>
               <tr>
-                <th style={{ textAlign: 'left', padding: 10 }}>Nombre</th>
-                <th style={{ textAlign: 'left', padding: 10 }}>Sistema</th>
-                <th style={{ textAlign: 'left', padding: 10 }}>Mundo</th>
-                <th style={{ textAlign: 'left', padding: 10 }}>Resumen inicial</th>
-                <th style={{ textAlign: 'left', padding: 10 }}>Acciones</th>
+                <th>Nombre</th>
+                <th>Sistema</th>
+                <th>Mundo</th>
+                <th>Resumen inicial</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((c) => (
-                <tr key={c.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                  <td style={{ padding: 10 }}>
+                <tr key={c.id}>
+                  <td>
                     <Link to={`/campaigns/${c.id}`}>{c.name}</Link>
                   </td>
-                  <td style={{ padding: 10 }}>{c.system}</td>
-                  <td style={{ padding: 10 }}>{c.world_id ? <code>{c.world_id.slice(0, 8)}…</code> : <em>—</em>}</td>
-                  <td style={{ padding: 10 }}>{toSpanishStatus(c.brief_status)}</td>
-                  <td style={{ padding: 10 }}>
-                    <button onClick={() => void onDeleteCampaign(c)} disabled={deletingCampaignId === c.id}>
-                      {deletingCampaignId === c.id ? 'Borrando…' : 'Borrar'}
-                    </button>
+                  <td>{c.system}</td>
+                  <td>{c.world_id ? <code>{c.world_id.slice(0, 8)}…</code> : <em>—</em>}</td>
+                  <td>{toSpanishStatus(c.brief_status)}</td>
+                  <td>
+                    <IconButton
+                      label={`Borrar campaña «${c.name}»`}
+                      textShort="Borrar"
+                      busy={deletingCampaignId === c.id}
+                      busyLabel="Borrando…"
+                      busyShort="…"
+                      className="btn-icon--inline"
+                      onClick={() => void onDeleteCampaign(c)}
+                    >
+                      <IconTrash />
+                    </IconButton>
                   </td>
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td style={{ padding: 10, opacity: 0.8 }} colSpan={5}>
+                  <td className="muted" colSpan={5}>
                     No hay campañas todavía.
                   </td>
                 </tr>

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { World } from '../lib/api'
+import { IconButton } from '../components/IconButton'
+import { IconPlus, IconTrash } from '../components/icons'
 import { formatError } from '../lib/errors'
 import { toSpanishStatus } from '../lib/statusLabels'
 
@@ -74,50 +76,65 @@ export function WorldsPage() {
   }
 
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <h2 style={{ margin: 0 }}>Mundos</h2>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => void onCreate()} disabled={creating}>
-            {creating ? 'Creando…' : 'Crear'}
-          </button>
+    <div className="page">
+      <div className="page-head">
+        <h2>Mundos</h2>
+        <div className="btn-row">
+          <IconButton
+            label="Crear nuevo mundo"
+            textShort="Nuevo"
+            busy={creating}
+            busyLabel="Creando mundo…"
+            busyShort="…"
+            onClick={() => void onCreate()}
+          >
+            <IconPlus />
+          </IconButton>
         </div>
       </div>
 
-      {error && <div style={{ color: 'salmon' }}>{error}</div>}
-      {!items && !error && <div>Cargando…</div>}
+      {error && <div className="error-banner">{error}</div>}
+      {!items && !error && <div className="loading">Cargando…</div>}
 
       {items && (
-        <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ background: 'rgba(255,255,255,0.04)' }}>
+        <div className="table-shell">
+          <table className="data-table">
+            <thead>
               <tr>
-                <th style={{ textAlign: 'left', padding: 10 }}>Nombre</th>
-                <th style={{ textAlign: 'left', padding: 10 }}>Estado</th>
-                <th style={{ textAlign: 'left', padding: 10 }}>Actualizado</th>
-                <th style={{ textAlign: 'left', padding: 10 }}>Acciones</th>
+                <th>Nombre</th>
+                <th>Estado</th>
+                <th>Actualizado</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((w) => (
-                <tr key={w.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                  <td style={{ padding: 10 }}>
+                <tr key={w.id}>
+                  <td>
                     <Link to={`/worlds/${w.id}`}>{w.name}</Link>
                   </td>
-                  <td style={{ padding: 10 }}>{toSpanishStatus(w.status)}</td>
-                  <td style={{ padding: 10 }}>
-                    <small style={{ opacity: 0.8 }}>{w.updated_at}</small>
+                  <td>{toSpanishStatus(w.status)}</td>
+                  <td>
+                    <small className="muted">{w.updated_at}</small>
                   </td>
-                  <td style={{ padding: 10 }}>
-                    <button onClick={() => void onDeleteWorld(w)} disabled={deletingWorldId === w.id}>
-                      {deletingWorldId === w.id ? 'Borrando…' : 'Borrar'}
-                    </button>
+                  <td>
+                    <IconButton
+                      label={`Borrar mundo «${w.name}»`}
+                      textShort="Borrar"
+                      busy={deletingWorldId === w.id}
+                      busyLabel="Borrando…"
+                      busyShort="…"
+                      className="btn-icon--inline"
+                      onClick={() => void onDeleteWorld(w)}
+                    >
+                      <IconTrash />
+                    </IconButton>
                   </td>
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td style={{ padding: 10, opacity: 0.8 }} colSpan={4}>
+                  <td className="muted" colSpan={4}>
                     No hay mundos todavía.
                   </td>
                 </tr>

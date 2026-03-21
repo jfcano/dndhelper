@@ -3,6 +3,22 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { Campaign, CampaignBrief, CampaignWizardDraft, PlayerProfile, Session, World } from '../lib/api'
 import { formatError } from '../lib/errors'
+import { IconButton } from '../components/IconButton'
+import {
+  IconArrowLeft,
+  IconCheck,
+  IconChevronLeft,
+  IconChevronRight,
+  IconLink,
+  IconMinus,
+  IconPlus,
+  IconRotateCcw,
+  IconSave,
+  IconSparkles,
+  IconTrash,
+  IconUsers,
+  IconX,
+} from '../components/icons'
 import { toSpanishStatus } from '../lib/statusLabels'
 import { TabBar, TabButton } from '../components/TabBar'
 
@@ -94,7 +110,7 @@ function renderMarkdownLite(md: string): ReactNode {
   return (
     <div style={{ display: 'grid', gap: 14, lineHeight: 1.65, textAlign: 'justify' }}>
       {blocks.map((b, idx) => {
-        if (b.kind === 'hr') return <hr key={`hr-${idx}`} style={{ borderColor: 'rgba(255,255,255,0.12)' }} />
+        if (b.kind === 'hr') return <hr key={`hr-${idx}`} style={{ borderColor: 'var(--border-subtle)' }} />
         if (b.kind === 'h2')
           return (
             <h2 key={`h2-${idx}`} style={{ margin: '4px 0 0', fontSize: 18, textAlign: 'left' }}>
@@ -991,19 +1007,21 @@ export function CampaignDetailPage() {
     <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
-          <button onClick={() => navigate(-1)}>←</button>
+          <IconButton label="Volver atrás" textShort="Volver" className="btn-icon--inline" onClick={() => navigate(-1)}>
+            <IconArrowLeft />
+          </IconButton>
           <h2 style={{ margin: 0, fontSize: 30, textAlign: 'left' }}>Campaña</h2>
         </div>
         {campaign && <code>{campaign.id}</code>}
       </div>
 
-      {error && <div style={{ color: 'salmon' }}>{error}</div>}
+      {error && <div style={{ color: 'var(--danger)' }}>{error}</div>}
       {ok && <div style={{ color: 'lightgreen' }}>{ok}</div>}
       {!campaign && !error && <div>Cargando…</div>}
 
       {campaign && (
         <>
-          <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
+          <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 2fr) minmax(140px, 1fr) minmax(140px, 1fr)', gap: 12, alignItems: 'start' }}>
               <div>
                 <div style={{ opacity: 0.75, fontSize: 12 }}>Nombre</div>
@@ -1024,7 +1042,7 @@ export function CampaignDetailPage() {
                         minWidth: 220,
                         padding: 8,
                         borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.12)',
+                        border: '1px solid var(--border-subtle)',
                         background: 'rgba(0,0,0,0.25)',
                         color: 'inherit',
                         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
@@ -1032,12 +1050,18 @@ export function CampaignDetailPage() {
                       }}
                       disabled={nameSaving || saving || storySaving}
                     />
-                    <button
+                    <IconButton
+                      label="Guardar nombre de campaña"
+                      textShort="Guardar"
+                      busy={nameSaving}
+                      busyLabel="Guardando nombre…"
+                      busyShort="…"
+                      disabled={saving || !campaignNameDirty || !campaignNameEditor.trim()}
+                      className="btn-icon--inline"
                       onClick={() => void onSaveCampaignName()}
-                      disabled={nameSaving || saving || !campaignNameDirty || !campaignNameEditor.trim()}
                     >
-                      {nameSaving ? 'Guardando…' : 'Guardar'}
-                    </button>
+                      <IconSave />
+                    </IconButton>
                   </div>
                 )}
               </div>
@@ -1053,7 +1077,7 @@ export function CampaignDetailPage() {
           </div>
 
           {campaign.brief_status !== 'approved' && !campaign.story_draft && (
-            <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
+            <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <h3 style={{ margin: 0, fontSize: 24, textAlign: 'left' }}>Asistente de resumen inicial</h3>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -1076,9 +1100,18 @@ export function CampaignDetailPage() {
                           </option>
                         ))}
                       </select>
-                      <button onClick={() => void onLinkWorld()} disabled={saving || !worldId || campaign?.world_id === worldId}>
-                        {saving ? 'Vinculando…' : 'Vincular mundo'}
-                      </button>
+                      <IconButton
+                        label="Vincular mundo a la campaña"
+                        textShort="Vincular"
+                        busy={saving}
+                        busyLabel="Vinculando mundo…"
+                        busyShort="…"
+                        disabled={!worldId || campaign?.world_id === worldId}
+                        className="btn-icon--inline"
+                        onClick={() => void onLinkWorld()}
+                      >
+                        <IconLink />
+                      </IconButton>
                       {campaign.world_id && <Link to={`/worlds/${campaign.world_id}`}>Abrir mundo vinculado</Link>}
                     </>
                   )}
@@ -1090,9 +1123,18 @@ export function CampaignDetailPage() {
               <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ opacity: 0.8, fontSize: 13 }}>Tipo y tono de campaña</div>
-                  <button onClick={() => void onAutogenerateStep(0)} disabled={autogeneratingStep !== null || saving}>
-                    {autogeneratingStep === 0 ? 'Autogenerando…' : 'Autogenerar'}
-                  </button>
+                  <IconButton
+                    label="Autogenerar tipo y tono con IA"
+                    textShort="IA"
+                    busy={autogeneratingStep === 0}
+                    busyLabel="Autogenerando…"
+                    busyShort="…"
+                    disabled={autogeneratingStep !== null || saving}
+                    className="btn-icon--inline"
+                    onClick={() => void onAutogenerateStep(0)}
+                  >
+                    <IconSparkles />
+                  </IconButton>
                 </div>
                 <input
                   value={wizard.kind}
@@ -1111,9 +1153,18 @@ export function CampaignDetailPage() {
               <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ opacity: 0.8, fontSize: 13 }}>Temas principales</div>
-                  <button onClick={() => void onAutogenerateStep(1)} disabled={autogeneratingStep !== null || saving}>
-                    {autogeneratingStep === 1 ? 'Autogenerando…' : 'Autogenerar'}
-                  </button>
+                  <IconButton
+                    label="Autogenerar temas con IA"
+                    textShort="IA"
+                    busy={autogeneratingStep === 1}
+                    busyLabel="Autogenerando…"
+                    busyShort="…"
+                    disabled={autogeneratingStep !== null || saving}
+                    className="btn-icon--inline"
+                    onClick={() => void onAutogenerateStep(1)}
+                  >
+                    <IconSparkles />
+                  </IconButton>
                 </div>
                 {wizard.themes.map((t, i) => (
                   <div key={`theme-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
@@ -1128,21 +1179,31 @@ export function CampaignDetailPage() {
                       }
                       placeholder="intriga política, exploración, horror…"
                     />
-                    <button
+                    <IconButton
+                      label="Quitar tema"
+                      textShort="Quitar"
+                      className="btn-icon--inline"
+                      disabled={wizard.themes.length <= 1}
                       onClick={() =>
                         setWizard((w) => ({
                           ...w,
                           themes: w.themes.length > 1 ? w.themes.filter((_, idx) => idx !== i) : w.themes,
                         }))
                       }
-                      disabled={wizard.themes.length <= 1}
                     >
-                      Quitar
-                    </button>
+                      <IconMinus />
+                    </IconButton>
                   </div>
                 ))}
                 <div>
-                  <button onClick={() => setWizard((w) => ({ ...w, themes: [...w.themes, ''] }))}>+ Añadir tema</button>
+                  <IconButton
+                    label="Añadir tema"
+                    textShort="Añadir"
+                    className="btn-icon--inline"
+                    onClick={() => setWizard((w) => ({ ...w, themes: [...w.themes, ''] }))}
+                  >
+                    <IconPlus />
+                  </IconButton>
                 </div>
               </div>
             )}
@@ -1151,9 +1212,18 @@ export function CampaignDetailPage() {
               <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ opacity: 0.8, fontSize: 13 }}>Nivel inicial y restricciones</div>
-                  <button onClick={() => void onAutogenerateStep(2)} disabled={autogeneratingStep !== null || saving}>
-                    {autogeneratingStep === 2 ? 'Autogenerando…' : 'Autogenerar'}
-                  </button>
+                  <IconButton
+                    label="Autogenerar nivel y restricciones con IA"
+                    textShort="IA"
+                    busy={autogeneratingStep === 2}
+                    busyLabel="Autogenerando…"
+                    busyShort="…"
+                    disabled={autogeneratingStep !== null || saving}
+                    className="btn-icon--inline"
+                    onClick={() => void onAutogenerateStep(2)}
+                  >
+                    <IconSparkles />
+                  </IconButton>
                 </div>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <span style={{ opacity: 0.75, fontSize: 12 }}>Nivel inicial</span>
@@ -1181,9 +1251,18 @@ export function CampaignDetailPage() {
               <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ opacity: 0.8, fontSize: 13 }}>Inspiraciones</div>
-                  <button onClick={() => void onAutogenerateStep(3)} disabled={autogeneratingStep !== null || saving}>
-                    {autogeneratingStep === 3 ? 'Autogenerando…' : 'Autogenerar'}
-                  </button>
+                  <IconButton
+                    label="Autogenerar inspiraciones con IA"
+                    textShort="IA"
+                    busy={autogeneratingStep === 3}
+                    busyLabel="Autogenerando…"
+                    busyShort="…"
+                    disabled={autogeneratingStep !== null || saving}
+                    className="btn-icon--inline"
+                    onClick={() => void onAutogenerateStep(3)}
+                  >
+                    <IconSparkles />
+                  </IconButton>
                 </div>
                 {wizard.inspirations.map((t, i) => (
                   <div key={`insp-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
@@ -1198,48 +1277,80 @@ export function CampaignDetailPage() {
                       }
                       placeholder="The Witcher, Eberron, Zelda…"
                     />
-                    <button
+                    <IconButton
+                      label="Quitar inspiración"
+                      textShort="Quitar"
+                      className="btn-icon--inline"
+                      disabled={wizard.inspirations.length <= 1}
                       onClick={() =>
                         setWizard((w) => ({
                           ...w,
                           inspirations: w.inspirations.length > 1 ? w.inspirations.filter((_, idx) => idx !== i) : w.inspirations,
                         }))
                       }
-                      disabled={wizard.inspirations.length <= 1}
                     >
-                      Quitar
-                    </button>
+                      <IconMinus />
+                    </IconButton>
                   </div>
                 ))}
                 <div>
-                  <button onClick={() => setWizard((w) => ({ ...w, inspirations: [...w.inspirations, ''] }))}>
-                    + Añadir inspiración
-                  </button>
+                  <IconButton
+                    label="Añadir inspiración"
+                    textShort="Añadir"
+                    className="btn-icon--inline"
+                    onClick={() => setWizard((w) => ({ ...w, inspirations: [...w.inspirations, ''] }))}
+                  >
+                    <IconPlus />
+                  </IconButton>
                 </div>
               </div>
             )}
 
             <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={() => setStep(visibleSteps[Math.max(0, currentVisibleIndex - 1)] ?? firstVisibleStep)}
+                <IconButton
+                  label="Paso anterior del asistente"
+                  textShort="Atrás"
                   disabled={!canGoPrev || saving}
+                  className="btn-icon--inline"
+                  onClick={() => setStep(visibleSteps[Math.max(0, currentVisibleIndex - 1)] ?? firstVisibleStep)}
                 >
-                  Anterior
-                </button>
-                <button onClick={() => void onResetWizard()} disabled={saving}>
-                  Reiniciar asistente
-                </button>
+                  <IconChevronLeft />
+                </IconButton>
+                <IconButton
+                  label="Reiniciar asistente de campaña"
+                  textShort="Reiniciar"
+                  disabled={saving}
+                  className="btn-icon--inline"
+                  onClick={() => void onResetWizard()}
+                >
+                  <IconRotateCcw />
+                </IconButton>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 {canGoNext ? (
-                  <button onClick={() => setStep(visibleSteps[currentVisibleIndex + 1])} disabled={!canContinueFromCurrentStep() || saving}>
-                    Siguiente
-                  </button>
+                  <IconButton
+                    label="Siguiente paso del asistente"
+                    textShort="Siguiente"
+                    disabled={!canContinueFromCurrentStep() || saving}
+                    className="btn-icon--inline"
+                    onClick={() => setStep(visibleSteps[currentVisibleIndex + 1])}
+                  >
+                    <IconChevronRight />
+                  </IconButton>
                 ) : (
-                  <button onClick={() => void onSaveBriefDraft()} disabled={saving || !canContinueFromCurrentStep()}>
-                    {saving ? 'Guardando…' : 'Guardar borrador'}
-                  </button>
+                  <IconButton
+                    label="Guardar borrador del brief"
+                    textShort="Guardar"
+                    busy={saving}
+                    busyLabel="Guardando brief…"
+                    busyShort="…"
+                    disabled={!canContinueFromCurrentStep()}
+                    className="btn-icon--inline"
+                    onClick={() => void onSaveBriefDraft()}
+                  >
+                    <IconSave />
+                  </IconButton>
                 )}
               </div>
             </div>
@@ -1269,31 +1380,48 @@ export function CampaignDetailPage() {
               {campaign.brief_status !== 'approved' ? (
                 <>
                   {campaign.story_draft && (
-                    <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 }}>
+                    <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, marginTop: 4 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
                         <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>Borrador del resumen de historia</h3>
                         <div style={{ display: 'flex', gap: 8 }}>
-                          <button
+                          <IconButton
+                            label="Guardar borrador del resumen de historia"
+                            textShort="Guardar"
+                            busy={storySaving}
+                            busyLabel="Guardando borrador…"
+                            busyShort="…"
+                            disabled={saving || !campaign.world_id || campaign.world_id !== worldId}
+                            className="btn-icon--inline"
                             onClick={() => void onSaveStoryDraft()}
-                            disabled={storySaving || saving || !campaign.world_id || campaign.world_id !== worldId}
                           >
-                            {storySaving ? 'Guardando…' : 'Guardar borrador'}
-                          </button>
-                          <button
-                            onClick={() => void onApproveBrief()}
+                            <IconSave />
+                          </IconButton>
+                          <IconButton
+                            label="Aprobar resumen de historia"
+                            textShort="Aprobar"
+                            busy={saving}
+                            busyLabel="Aprobando…"
+                            busyShort="…"
                             disabled={
-                              saving ||
                               storySaving ||
                               !campaign.world_id ||
                               campaign.world_id !== worldId ||
                               !storyEditorText.trim().length
                             }
+                            className="btn-icon--inline"
+                            onClick={() => void onApproveBrief()}
                           >
-                            {saving ? 'Aprobando…' : 'Aprobar'}
-                          </button>
-                          <button onClick={() => void onResetWizard()} disabled={saving || storySaving}>
-                            Reiniciar asistente
-                          </button>
+                            <IconCheck />
+                          </IconButton>
+                          <IconButton
+                            label="Reiniciar asistente de campaña"
+                            textShort="Reiniciar"
+                            disabled={saving || storySaving}
+                            className="btn-icon--inline"
+                            onClick={() => void onResetWizard()}
+                          >
+                            <IconRotateCcw />
+                          </IconButton>
                         </div>
                       </div>
 
@@ -1311,12 +1439,20 @@ export function CampaignDetailPage() {
                   )}
                 </>
               ) : (
-                <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 }}>
+                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, marginTop: 4 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
                     <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>Resumen final de historia</h3>
-                    <button onClick={() => void onReopenCampaign()} disabled={reopening}>
-                      {reopening ? 'Reabriendo…' : 'Volver a borrador'}
-                    </button>
+                    <IconButton
+                      label="Volver la historia a borrador"
+                      textShort="Borrador"
+                      busy={reopening}
+                      busyLabel="Reabriendo…"
+                      busyShort="…"
+                      className="btn-icon--inline"
+                      onClick={() => void onReopenCampaign()}
+                    >
+                      <IconRotateCcw />
+                    </IconButton>
                   </div>
                   <div style={{ marginTop: 10 }}>{storyFinalRendered}</div>
                 </div>
@@ -1325,30 +1461,35 @@ export function CampaignDetailPage() {
               )}
 
               {detailTab === 'sesiones' && (
-                <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 }}>
+                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, marginTop: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
                 <h3 style={{ marginTop: 0, fontSize: 24, textAlign: 'left' }}>Sesiones vinculadas</h3>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <button
-                    onClick={() => {
-                      setCreateSessionsError(null)
-                      setCreateSessionsOpen(true)
-                    }}
+                  <IconButton
+                    label="Crear sesiones y generar con IA"
+                    textShort="Sesiones"
+                    busy={createSessionsLoading}
+                    busyLabel="Generando sesiones…"
+                    busyShort="…"
                     disabled={
-                      createSessionsLoading ||
                       sessionsLoading ||
                       campaign.brief_status !== 'approved' ||
                       (campaign.outline_status || '').toLowerCase() !== 'approved'
                     }
+                    className="btn-icon--inline"
+                    onClick={() => {
+                      setCreateSessionsError(null)
+                      setCreateSessionsOpen(true)
+                    }}
                   >
-                    {createSessionsLoading ? 'Generando…' : 'Crear y generar'}
-                  </button>
+                    <IconSparkles />
+                  </IconButton>
                 </div>
               </div>
               {sessionsError && (
-                <div style={{ color: 'salmon', whiteSpace: 'pre-wrap' }}>{sessionsError}</div>
+                <div style={{ color: 'var(--danger)', whiteSpace: 'pre-wrap' }}>{sessionsError}</div>
               )}
-              {createSessionsError && <div style={{ color: 'salmon', marginTop: 8 }}>{createSessionsError}</div>}
+              {createSessionsError && <div style={{ color: 'var(--danger)', marginTop: 8 }}>{createSessionsError}</div>}
               {campaign.brief_status === 'approved' &&
                 (campaign.outline_status || '').toLowerCase() !== 'approved' && (
                   <div style={{ marginTop: 8, opacity: 0.8, fontSize: 13 }}>
@@ -1359,7 +1500,7 @@ export function CampaignDetailPage() {
               {sessions && sessions.length === 0 && <div>No hay sesiones para esta campaña.</div>}
 
               {createSessionsOpen && (
-                <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 12 }}>
+                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, marginTop: 12 }}>
                   <h4 style={{ margin: '0 0 8px 0' }}>Crear sesiones</h4>
                   <p style={{ margin: 0, opacity: 0.85, fontSize: 13 }}>
                     Se generan título y resumen por sesión. Luego puedes editar el resumen y redactar el guion (borrador) a mano en el detalle de cada sesión.
@@ -1376,7 +1517,7 @@ export function CampaignDetailPage() {
                         style={{
                           padding: 8,
                           borderRadius: 10,
-                          border: '1px solid rgba(255,255,255,0.12)',
+                          border: '1px solid var(--border-subtle)',
                           background: 'rgba(0,0,0,0.25)',
                           color: 'inherit',
                           width: 140,
@@ -1385,15 +1526,26 @@ export function CampaignDetailPage() {
                       />
                     </label>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        onClick={() => setCreateSessionsOpen(false)}
+                      <IconButton
+                        label="Cerrar sin crear sesiones"
+                        textShort="Cerrar"
                         disabled={createSessionsLoading}
+                        className="btn-icon--inline"
+                        onClick={() => setCreateSessionsOpen(false)}
                       >
-                        Cancelar
-                      </button>
-                      <button onClick={() => void onCreateAndGenerateSessions()} disabled={createSessionsLoading}>
-                        {createSessionsLoading ? 'Creando…' : 'Crear y generar'}
-                      </button>
+                        <IconX />
+                      </IconButton>
+                      <IconButton
+                        label="Crear sesiones y generar con IA"
+                        textShort="Crear"
+                        busy={createSessionsLoading}
+                        busyLabel="Creando sesiones…"
+                        busyShort="…"
+                        className="btn-icon--inline"
+                        onClick={() => void onCreateAndGenerateSessions()}
+                      >
+                        <IconSparkles />
+                      </IconButton>
                     </div>
                   </div>
                 </div>
@@ -1403,7 +1555,7 @@ export function CampaignDetailPage() {
                 <div style={{ display: 'grid', gap: 12 }}>
                   <div style={{ overflow: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead style={{ background: 'rgba(255,255,255,0.04)' }}>
+                      <thead style={{ background: 'var(--table-header-bg)' }}>
                         <tr>
                           <th style={{ textAlign: 'left', padding: 10 }}>Orden</th>
                           <th style={{ textAlign: 'left', padding: 10 }}>Nombre</th>
@@ -1417,8 +1569,8 @@ export function CampaignDetailPage() {
                             key={s.id}
                             onClick={() => setSelectedSessionId(s.id)}
                             style={{
-                              borderTop: '1px solid rgba(255,255,255,0.08)',
-                              background: selectedSessionId === s.id ? 'rgba(255,255,255,0.04)' : undefined,
+                              borderTop: '1px solid var(--table-row-border)',
+                              background: selectedSessionId === s.id ? 'var(--table-row-selected)' : undefined,
                               cursor: 'pointer',
                             }}
                           >
@@ -1426,15 +1578,21 @@ export function CampaignDetailPage() {
                             <td style={{ padding: 10 }}>{s.title}</td>
                             <td style={{ padding: 10 }}>{toSpanishStatus(s.approval_status)}</td>
                             <td style={{ padding: 10 }}>
-                              <button
+                              <IconButton
+                                label={`Borrar sesión ${s.session_number}`}
+                                textShort="Borrar"
+                                busy={sessionDeleteLoadingId === s.id}
+                                busyLabel="Borrando…"
+                                busyShort="…"
+                                disabled={createSessionsLoading}
+                                className="btn-icon--inline"
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   void onDeleteSession(s.id)
                                 }}
-                                disabled={sessionDeleteLoadingId === s.id || createSessionsLoading}
                               >
-                                {sessionDeleteLoadingId === s.id ? 'Borrando…' : 'Borrar'}
-                              </button>
+                                <IconTrash />
+                              </IconButton>
                             </td>
                           </tr>
                         ))}
@@ -1443,34 +1601,48 @@ export function CampaignDetailPage() {
                   </div>
 
                   {selectedSession ? (
-                    <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
+                    <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
                         <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>
                           Sesión {selectedSession.session_number}: {selectedSession.title}
                         </h3>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                           {selectedSession.approval_status !== 'approved' ? (
-                            <button
+                            <IconButton
+                              label="Aprobar sesión"
+                              textShort="Aprobar"
+                              busy={sessionApproving}
+                              busyLabel="Aprobando…"
+                              busyShort="…"
+                              disabled={sessionReopening || sessionSummarySaving || sessionDraftSaving}
+                              className="btn-icon--inline"
                               onClick={() => void onApproveSession()}
-                              disabled={
-                                sessionApproving || sessionReopening || sessionSummarySaving || sessionDraftSaving
-                              }
                             >
-                              {sessionApproving ? 'Aprobando…' : 'Aprobar sesión'}
-                            </button>
+                              <IconCheck />
+                            </IconButton>
                           ) : (
-                            <button
+                            <IconButton
+                              label="Volver sesión a borrador"
+                              textShort="Borrador"
+                              busy={sessionReopening}
+                              busyLabel="Reabriendo…"
+                              busyShort="…"
+                              disabled={sessionApproving || sessionSummarySaving || sessionDraftSaving}
+                              className="btn-icon--inline"
                               onClick={() => void onReopenSession()}
-                              disabled={
-                                sessionReopening || sessionApproving || sessionSummarySaving || sessionDraftSaving
-                              }
                             >
-                              {sessionReopening ? 'Reabriendo…' : 'Volver a borrador'}
-                            </button>
+                              <IconRotateCcw />
+                            </IconButton>
                           )}
-                          <button onClick={() => setSelectedSessionId(null)} disabled={!selectedSessionId}>
-                            Cerrar detalle
-                          </button>
+                          <IconButton
+                            label="Cerrar detalle de sesión"
+                            textShort="Cerrar"
+                            disabled={!selectedSessionId}
+                            className="btn-icon--inline"
+                            onClick={() => setSelectedSessionId(null)}
+                          >
+                            <IconX />
+                          </IconButton>
                         </div>
                       </div>
                       <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
@@ -1507,12 +1679,17 @@ export function CampaignDetailPage() {
                                 placeholder="Resumen de la sesión en Markdown…"
                               />
                               <div style={{ marginTop: 8 }}>
-                                <button
+                                <IconButton
+                                  label="Guardar resumen de sesión"
+                                  textShort="Guardar"
+                                  busy={sessionSummarySaving}
+                                  busyLabel="Guardando resumen…"
+                                  busyShort="…"
+                                  className="btn-icon--inline"
                                   onClick={() => void onSaveSessionSummary()}
-                                  disabled={sessionSummarySaving}
                                 >
-                                  {sessionSummarySaving ? 'Guardando…' : 'Guardar resumen'}
-                                </button>
+                                  <IconSave />
+                                </IconButton>
                               </div>
                             </>
                           )}
@@ -1539,9 +1716,17 @@ export function CampaignDetailPage() {
                                 disabled={sessionDraftSaving}
                               />
                               <div style={{ marginTop: 8 }}>
-                                <button onClick={() => void onSaveSessionDraft()} disabled={sessionDraftSaving}>
-                                  {sessionDraftSaving ? 'Guardando…' : 'Guardar contenido draft'}
-                                </button>
+                                <IconButton
+                                  label="Guardar borrador del guion de sesión"
+                                  textShort="Guardar"
+                                  busy={sessionDraftSaving}
+                                  busyLabel="Guardando guion…"
+                                  busyShort="…"
+                                  className="btn-icon--inline"
+                                  onClick={() => void onSaveSessionDraft()}
+                                >
+                                  <IconSave />
+                                </IconButton>
                               </div>
                             </>
                           ) : null}
@@ -1557,22 +1742,28 @@ export function CampaignDetailPage() {
               )}
 
               {detailTab === 'jugadores' && (
-                <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 4 }}>
+                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, marginTop: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
                 <h3 style={{ marginTop: 0, fontSize: 24, textAlign: 'left' }}>Personajes jugadores</h3>
-                <button
+                <IconButton
+                  label="Crear personajes jugadores con IA"
+                  textShort="Jugadores"
+                  busy={playersLoading}
+                  busyLabel="Generando jugadores…"
+                  busyShort="…"
+                  disabled={campaign.brief_status !== 'approved'}
+                  className="btn-icon--inline"
                   onClick={() => {
                     setPlayersError(null)
                     setCreatePlayersOpen(true)
                   }}
-                  disabled={playersLoading || campaign.brief_status !== 'approved'}
                 >
-                  {playersLoading ? 'Generando…' : 'Crear y generar'}
-                </button>
+                  <IconUsers />
+                </IconButton>
               </div>
-              {playersError && <div style={{ color: 'salmon' }}>{playersError}</div>}
+              {playersError && <div style={{ color: 'var(--danger)' }}>{playersError}</div>}
               {createPlayersOpen && (
-                <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, marginTop: 12 }}>
+                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, marginTop: 12 }}>
                   <h4 style={{ margin: '0 0 8px 0' }}>Crear personajes jugadores</h4>
                   <div style={{ display: 'grid', gap: 10 }}>
                     <label style={{ display: 'grid', gap: 6 }}>
@@ -1586,7 +1777,7 @@ export function CampaignDetailPage() {
                         style={{
                           padding: 8,
                           borderRadius: 10,
-                          border: '1px solid rgba(255,255,255,0.12)',
+                          border: '1px solid var(--border-subtle)',
                           background: 'rgba(0,0,0,0.25)',
                           color: 'inherit',
                           width: 140,
@@ -1595,12 +1786,26 @@ export function CampaignDetailPage() {
                       />
                     </label>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button onClick={() => setCreatePlayersOpen(false)} disabled={playersLoading}>
-                        Cancelar
-                      </button>
-                      <button onClick={() => void onCreateAndGeneratePlayers()} disabled={playersLoading}>
-                        {playersLoading ? 'Creando…' : 'Crear y generar'}
-                      </button>
+                      <IconButton
+                        label="Cancelar creación de jugadores"
+                        textShort="Cancelar"
+                        disabled={playersLoading}
+                        className="btn-icon--inline"
+                        onClick={() => setCreatePlayersOpen(false)}
+                      >
+                        <IconX />
+                      </IconButton>
+                      <IconButton
+                        label="Crear y generar personajes jugadores"
+                        textShort="Crear"
+                        busy={playersLoading}
+                        busyLabel="Creando jugadores…"
+                        busyShort="…"
+                        className="btn-icon--inline"
+                        onClick={() => void onCreateAndGeneratePlayers()}
+                      >
+                        <IconSparkles />
+                      </IconButton>
                     </div>
                   </div>
                 </div>
@@ -1614,7 +1819,7 @@ export function CampaignDetailPage() {
                 <div style={{ display: 'grid', gap: 12 }}>
                   <div style={{ overflow: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead style={{ background: 'rgba(255,255,255,0.04)' }}>
+                      <thead style={{ background: 'var(--table-header-bg)' }}>
                         <tr>
                           <th style={{ textAlign: 'left', padding: 10 }}>Jugador</th>
                           <th style={{ textAlign: 'left', padding: 10 }}>Resumen</th>
@@ -1626,8 +1831,8 @@ export function CampaignDetailPage() {
                           <tr
                             key={p.id}
                             style={{
-                              borderTop: '1px solid rgba(255,255,255,0.08)',
-                              background: selectedPlayerIndex === idx ? 'rgba(255,255,255,0.04)' : undefined,
+                              borderTop: '1px solid var(--table-row-border)',
+                              background: selectedPlayerIndex === idx ? 'var(--table-row-selected)' : undefined,
                               cursor: 'pointer',
                             }}
                             onClick={() => setSelectedPlayerIndex(idx)}
@@ -1637,14 +1842,17 @@ export function CampaignDetailPage() {
                             </td>
                             <td style={{ padding: 10 }}>{p.summary || <span style={{ opacity: 0.75 }}>(vacío)</span>}</td>
                             <td style={{ padding: 10 }}>
-                              <button
+                              <IconButton
+                                label={`Borrar personaje jugador ${p.name}`}
+                                textShort="Borrar"
+                                className="btn-icon--inline"
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   onDeleteGeneratedPlayer(p.id)
                                 }}
                               >
-                                Borrar
-                              </button>
+                                <IconTrash />
+                              </IconButton>
                             </td>
                           </tr>
                         ))}
@@ -1653,7 +1861,7 @@ export function CampaignDetailPage() {
                   </div>
 
                   {selectedPlayer ? (
-                    <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
+                    <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
                         <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>{selectedPlayer.name}</h3>
                         <div style={{ opacity: 0.75, fontSize: 12 }}>Vista de detalle</div>
@@ -1668,10 +1876,10 @@ export function CampaignDetailPage() {
                           <div
                             style={{
                               marginTop: 6,
-                              border: '1px solid rgba(255,255,255,0.12)',
+                              border: '1px solid var(--border-subtle)',
                               borderRadius: 10,
                               padding: 10,
-                              background: 'rgba(255,255,255,0.02)',
+                              background: 'var(--panel-highlight)',
                               fontSize: 14,
                               lineHeight: 1.45,
                               textAlign: 'left',

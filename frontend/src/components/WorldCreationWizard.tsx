@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { UUID, World, WorldGenerate } from '../lib/api'
 import { api } from '../lib/api'
+import { IconButton } from './IconButton'
+import {
+  IconChevronLeft,
+  IconChevronRight,
+  IconMinus,
+  IconPlus,
+  IconRotateCcw,
+  IconSparkles,
+} from './icons'
 import { formatError } from '../lib/errors'
 
 function createEmptyWizard(): WorldGenerate {
@@ -121,8 +130,8 @@ export function WorldCreationWizard({
   }
 
   return (
-    <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
-      {error && <div style={{ color: 'salmon', marginBottom: 8 }}>{error}</div>}
+    <div className="card-panel">
+      {error && <div className="error-banner" style={{ marginBottom: 8 }}>{error}</div>}
       <h3 style={{ marginTop: 0 }}>Asistente de creación de mundo</h3>
       <div style={{ opacity: 0.8, fontSize: 13 }}>Paso {step + 1} de 4</div>
 
@@ -130,9 +139,18 @@ export function WorldCreationWizard({
         <div style={{ marginTop: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
             <div style={{ opacity: 0.8, fontSize: 13 }}>Temática general (tono y ambiente)</div>
-            <button onClick={() => void onAutogenerateStep(0)} disabled={autogeneratingStep !== null || generating}>
-              {autogeneratingStep === 0 ? 'Autogenerando…' : 'Autogenerar'}
-            </button>
+            <IconButton
+              label="Autogenerar temática con IA"
+              textShort="IA"
+              busy={autogeneratingStep === 0}
+              busyLabel="Autogenerando…"
+              busyShort="…"
+              disabled={autogeneratingStep !== null || generating}
+              className="btn-icon--inline"
+              onClick={() => void onAutogenerateStep(0)}
+            >
+              <IconSparkles />
+            </IconButton>
           </div>
           <textarea
             value={wizard.theme_and_mood}
@@ -146,9 +164,9 @@ export function WorldCreationWizard({
               fontSize: 13,
               padding: 10,
               borderRadius: 10,
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: 'rgba(0,0,0,0.25)',
-              color: 'inherit',
+              border: '1px solid var(--border-subtle)',
+              background: 'var(--bg-input)',
+              color: 'var(--text-heading)',
             }}
           />
         </div>
@@ -158,9 +176,18 @@ export function WorldCreationWizard({
         <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
             <div style={{ opacity: 0.8, fontSize: 13 }}>Facciones principales con objetivos</div>
-            <button onClick={() => void onAutogenerateStep(1)} disabled={autogeneratingStep !== null || generating}>
-              {autogeneratingStep === 1 ? 'Autogenerando…' : 'Autogenerar'}
-            </button>
+            <IconButton
+              label="Autogenerar facciones con IA"
+              textShort="IA"
+              busy={autogeneratingStep === 1}
+              busyLabel="Autogenerando…"
+              busyShort="…"
+              disabled={autogeneratingStep !== null || generating}
+              className="btn-icon--inline"
+              onClick={() => void onAutogenerateStep(1)}
+            >
+              <IconSparkles />
+            </IconButton>
           </div>
           {wizard.factions.map((f, i) => (
             <div key={`f-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: 8 }}>
@@ -186,26 +213,32 @@ export function WorldCreationWizard({
                   })
                 }
               />
-              <button
+              <IconButton
+                label="Quitar facción"
+                textShort="Quitar"
+                className="btn-icon--inline"
+                disabled={wizard.factions.length <= 1}
                 onClick={() =>
                   setWizard((w) => ({
                     ...w,
                     factions: w.factions.length > 1 ? w.factions.filter((_, idx) => idx !== i) : w.factions,
                   }))
                 }
-                disabled={wizard.factions.length <= 1}
               >
-                Quitar
-              </button>
+                <IconMinus />
+              </IconButton>
             </div>
           ))}
           <div>
-            <button
-              onClick={() => setWizard((w) => ({ ...w, factions: [...w.factions, { name: '', objective: '' }] }))}
+            <IconButton
+              label="Añadir facción"
+              textShort="Añadir"
               disabled={generating}
+              className="btn-icon--inline"
+              onClick={() => setWizard((w) => ({ ...w, factions: [...w.factions, { name: '', objective: '' }] }))}
             >
-              + Añadir facción
-            </button>
+              <IconPlus />
+            </IconButton>
           </div>
         </div>
       )}
@@ -214,9 +247,18 @@ export function WorldCreationWizard({
         <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
             <div style={{ opacity: 0.8, fontSize: 13 }}>Personajes importantes dentro de cada facción</div>
-            <button onClick={() => void onAutogenerateStep(2)} disabled={autogeneratingStep !== null || generating}>
-              {autogeneratingStep === 2 ? 'Autogenerando…' : 'Autogenerar'}
-            </button>
+            <IconButton
+              label="Autogenerar personajes con IA"
+              textShort="IA"
+              busy={autogeneratingStep === 2}
+              busyLabel="Autogenerando…"
+              busyShort="…"
+              disabled={autogeneratingStep !== null || generating}
+              className="btn-icon--inline"
+              onClick={() => void onAutogenerateStep(2)}
+            >
+              <IconSparkles />
+            </IconButton>
           </div>
           {wizard.characters.map((c, i) => (
             <div key={`c-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 2fr auto', gap: 8 }}>
@@ -270,31 +312,37 @@ export function WorldCreationWizard({
                   })
                 }
               />
-              <button
+              <IconButton
+                label="Quitar personaje"
+                textShort="Quitar"
+                className="btn-icon--inline"
+                disabled={wizard.characters.length <= 1}
                 onClick={() =>
                   setWizard((w) => ({
                     ...w,
                     characters: w.characters.length > 1 ? w.characters.filter((_, idx) => idx !== i) : w.characters,
                   }))
                 }
-                disabled={wizard.characters.length <= 1}
               >
-                Quitar
-              </button>
+                <IconMinus />
+              </IconButton>
             </div>
           ))}
           <div>
-            <button
+            <IconButton
+              label="Añadir personaje"
+              textShort="Añadir"
+              disabled={generating}
+              className="btn-icon--inline"
               onClick={() =>
                 setWizard((w) => ({
                   ...w,
                   characters: [...w.characters, { name: '', faction_name: '', role: '', motivation: '' }],
                 }))
               }
-              disabled={generating}
             >
-              + Añadir personaje
-            </button>
+              <IconPlus />
+            </IconButton>
           </div>
         </div>
       )}
@@ -303,9 +351,18 @@ export function WorldCreationWizard({
         <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
             <div style={{ opacity: 0.8, fontSize: 13 }}>Ciudades importantes con temática y relaciones</div>
-            <button onClick={() => void onAutogenerateStep(3)} disabled={autogeneratingStep !== null || generating}>
-              {autogeneratingStep === 3 ? 'Autogenerando…' : 'Autogenerar'}
-            </button>
+            <IconButton
+              label="Autogenerar ciudades con IA"
+              textShort="IA"
+              busy={autogeneratingStep === 3}
+              busyLabel="Autogenerando…"
+              busyShort="…"
+              disabled={autogeneratingStep !== null || generating}
+              className="btn-icon--inline"
+              onClick={() => void onAutogenerateStep(3)}
+            >
+              <IconSparkles />
+            </IconButton>
           </div>
           {wizard.cities.map((c, i) => (
             <div key={`city-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 2fr auto', gap: 8 }}>
@@ -348,48 +405,81 @@ export function WorldCreationWizard({
                   })
                 }
               />
-              <button
+              <IconButton
+                label="Quitar ciudad"
+                textShort="Quitar"
+                className="btn-icon--inline"
+                disabled={wizard.cities.length <= 1}
                 onClick={() =>
                   setWizard((w) => ({
                     ...w,
                     cities: w.cities.length > 1 ? w.cities.filter((_, idx) => idx !== i) : w.cities,
                   }))
                 }
-                disabled={wizard.cities.length <= 1}
               >
-                Quitar
-              </button>
+                <IconMinus />
+              </IconButton>
             </div>
           ))}
           <div>
-            <button
-              onClick={() => setWizard((w) => ({ ...w, cities: [...w.cities, { name: '', theme: '', relations: [] }] }))}
+            <IconButton
+              label="Añadir ciudad"
+              textShort="Añadir"
               disabled={generating}
+              className="btn-icon--inline"
+              onClick={() => setWizard((w) => ({ ...w, cities: [...w.cities, { name: '', theme: '', relations: [] }] }))}
             >
-              + Añadir ciudad
-            </button>
+              <IconPlus />
+            </IconButton>
           </div>
         </div>
       )}
 
       <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0 || generating}>
-            Anterior
-          </button>
-          <button onClick={onResetWizard} disabled={generating}>
-            Reiniciar asistente
-          </button>
+          <IconButton
+            label="Paso anterior"
+            textShort="Atrás"
+            disabled={step === 0 || generating}
+            className="btn-icon--inline"
+            onClick={() => setStep((s) => Math.max(0, s - 1))}
+          >
+            <IconChevronLeft />
+          </IconButton>
+          <IconButton
+            label="Reiniciar asistente de mundo"
+            textShort="Reiniciar"
+            disabled={generating}
+            className="btn-icon--inline"
+            onClick={onResetWizard}
+          >
+            <IconRotateCcw />
+          </IconButton>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {step < 3 ? (
-            <button onClick={() => setStep((s) => Math.min(3, s + 1))} disabled={!canContinueFromCurrentStep() || generating}>
-              Siguiente
-            </button>
+            <IconButton
+              label="Siguiente paso"
+              textShort="Siguiente"
+              disabled={!canContinueFromCurrentStep() || generating}
+              className="btn-icon--inline"
+              onClick={() => setStep((s) => Math.min(3, s + 1))}
+            >
+              <IconChevronRight />
+            </IconButton>
           ) : (
-            <button onClick={() => void onGenerate()} disabled={generating || !canContinueFromCurrentStep()}>
-              {generating ? 'Generando…' : 'Generar mundo'}
-            </button>
+            <IconButton
+              label="Generar mundo a partir del asistente"
+              textShort="Generar"
+              busy={generating}
+              busyLabel="Generando mundo…"
+              busyShort="…"
+              disabled={generating || !canContinueFromCurrentStep()}
+              className="btn-icon--inline"
+              onClick={() => void onGenerate()}
+            >
+              <IconSparkles />
+            </IconButton>
           )}
         </div>
       </div>

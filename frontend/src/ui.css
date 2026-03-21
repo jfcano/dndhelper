@@ -1,0 +1,95 @@
+/* Utilidades compartidas (listados, errores, tarjetas) */
+
+.page {
+  display: grid;
+  gap: 1rem;
+}
+
+.page-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.page-head h2 {
+  margin: 0;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.loading {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.error-banner {
+  color: var(--danger);
+  padding: 0.65rem 1rem;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: 10px;
+}
+
+.table-shell {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-gold);
+  background: var(--table-shell-bg);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table thead {
+  background: var(--table-header-bg);
+}
+
+.data-table th {
+  font-family: var(--heading);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+  text-align: left;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.data-table td {
+  padding: 12px 14px;
+  vertical-align: top;
+}
+
+.data-table tbody tr {
+  border-top: 1px solid var(--table-row-border);
+}
+
+.data-table tbody tr:hover {
+  background: var(--panel-highlight);
+}
+
+.card-panel {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--card-panel-bg);
+  box-shadow: inset 0 1px 0 rgba(255, 248, 235, 0.04);
+}
+
+html[data-theme='light'] .card-panel {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

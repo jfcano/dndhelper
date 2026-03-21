@@ -2,6 +2,7 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  color: var(--text);
 }
 
 .topbar {
@@ -9,39 +10,203 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(8px);
+  padding: 14px 20px;
+  background: linear-gradient(180deg, var(--topbar-grad-a) 0%, var(--topbar-grad-b) 100%);
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-soft);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  backdrop-filter: blur(10px);
+}
+
+.topbar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--topbar-line-gold) 20%,
+    var(--topbar-line-gold) 80%,
+    transparent
+  );
+  pointer-events: none;
+}
+
+.topbar-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+}
+
+/* Fila 1: marca a la izquierda, conmutador tema a la derecha */
+.topbar-row--brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+/* Fila 2: menú principal debajo, alineado a la izquierda (frente al conmutador arriba a la derecha) */
+.topbar-row--nav {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  width: 100%;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.brand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 
 .brand {
+  font-family: var(--heading);
   font-weight: 700;
-  letter-spacing: 0.3px;
+  font-size: 1.15rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-heading);
+  text-shadow: 0 0 24px rgba(201, 162, 39, 0.25);
+}
+
+.brand span.accent {
+  color: var(--gold);
+}
+
+html[data-theme='light'] .brand {
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
 .nav {
   display: flex;
-  gap: 10px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .nav a {
-  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--heading);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
   text-decoration: none;
-  padding: 6px 10px;
-  border-radius: 8px;
-  opacity: 0.85;
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.nav a .nav-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  opacity: 0.88;
+}
+
+.nav a:hover .nav-icon,
+.nav a.active .nav-icon {
+  opacity: 1;
+}
+
+.nav a:hover {
+  color: var(--text-heading);
+  background: var(--panel-highlight);
+  text-decoration: none;
 }
 
 .nav a.active {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--gold-bright);
+  background: var(--nav-active-bg);
+  border-color: var(--border-accent);
+  text-decoration: none;
+}
+
+/* Ornamentos cabecera (d20 + runas) */
+.header-ornaments {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--gold);
+  flex-shrink: 0;
+}
+
+.header-d20 {
+  width: 30px;
+  height: 33px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 10px rgba(201, 162, 39, 0.35));
+}
+
+html[data-theme='light'] .header-d20 {
+  filter: drop-shadow(0 1px 2px rgba(58, 50, 40, 0.2));
+}
+
+.header-runes {
+  font-family: var(--heading);
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  color: var(--gold-dim);
+  opacity: 0.9;
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* Conmutador taberna / pergamino (icono sol/luna) */
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .content {
-  padding: 16px;
-  max-width: 1100px;
+  padding: 24px 20px 48px;
+  max-width: 1120px;
   width: 100%;
   margin: 0 auto;
+  flex: 1;
 }
 
+@media (max-width: 640px) {
+  .topbar-row--brand {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .brand-wrap {
+    justify-content: center;
+  }
+
+  .topbar-row--nav {
+    justify-content: center;
+  }
+
+  .nav {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-runes {
+    display: none;
+  }
+}

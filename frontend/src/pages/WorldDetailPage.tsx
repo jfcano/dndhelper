@@ -4,6 +4,8 @@ import { api } from '../lib/api'
 import type { Campaign, World } from '../lib/api'
 import { formatError } from '../lib/errors'
 import { toSpanishStatus } from '../lib/statusLabels'
+import { IconButton } from '../components/IconButton'
+import { IconArrowLeft, IconCheck, IconRotateCcw, IconSave } from '../components/icons'
 import { WorldCreationWizard } from '../components/WorldCreationWizard'
 import { TabBar, TabButton } from '../components/TabBar'
 
@@ -90,7 +92,7 @@ function renderMarkdownLite(md: string): ReactNode {
   return (
     <div style={{ display: 'grid', gap: 14, lineHeight: 1.65, textAlign: 'justify' }}>
       {blocks.map((b, idx) => {
-        if (b.kind === 'hr') return <hr key={`hr-${idx}`} style={{ borderColor: 'rgba(255,255,255,0.12)' }} />
+        if (b.kind === 'hr') return <hr key={`hr-${idx}`} style={{ borderColor: 'var(--border-subtle)' }} />
         if (b.kind === 'h2')
           return (
             <h2 key={`h2-${idx}`} style={{ margin: '4px 0 0', fontSize: 18, textAlign: 'left' }}>
@@ -269,19 +271,21 @@ export function WorldDetailPage() {
     <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
-          <button onClick={() => navigate(-1)}>←</button>
+          <IconButton label="Volver atrás" textShort="Volver" className="btn-icon--inline" onClick={() => navigate(-1)}>
+            <IconArrowLeft />
+          </IconButton>
           <h2 style={{ margin: 0 }}>Mundo</h2>
         </div>
         {world && <code>{world.id}</code>}
       </div>
 
-      {error && <div style={{ color: 'salmon' }}>{error}</div>}
+      {error && <div style={{ color: 'var(--danger)' }}>{error}</div>}
       {ok && <div style={{ color: 'lightgreen' }}>{ok}</div>}
       {!world && !error && <div>Cargando…</div>}
 
       {world && (
         <>
-          <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
+          <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
               <div>
                 <div style={{ opacity: 0.75, fontSize: 12 }}>Nombre</div>
@@ -296,17 +300,38 @@ export function WorldDetailPage() {
                   <>
                     {world.status !== 'approved' ? (
                       <>
-                        <button onClick={onSave} disabled={saving}>
-                          {saving ? 'Guardando…' : 'Guardar borrador'}
-                        </button>
-                        <button onClick={onApprove} disabled={approving}>
-                          {approving ? 'Aprobando…' : 'Aprobar'}
-                        </button>
+                        <IconButton
+                          label="Guardar borrador del mundo"
+                          textShort="Guardar"
+                          busy={saving}
+                          busyLabel="Guardando borrador…"
+                          busyShort="…"
+                          onClick={onSave}
+                        >
+                          <IconSave />
+                        </IconButton>
+                        <IconButton
+                          label="Aprobar mundo"
+                          textShort="Aprobar"
+                          busy={approving}
+                          busyLabel="Aprobando…"
+                          busyShort="…"
+                          onClick={onApprove}
+                        >
+                          <IconCheck />
+                        </IconButton>
                       </>
                     ) : (
-                      <button onClick={onReopen} disabled={reopening}>
-                        {reopening ? 'Reabriendo…' : 'Volver a borrador'}
-                      </button>
+                      <IconButton
+                        label="Volver el mundo a borrador"
+                        textShort="Borrador"
+                        busy={reopening}
+                        busyLabel="Reabriendo…"
+                        busyShort="…"
+                        onClick={onReopen}
+                      >
+                        <IconRotateCcw />
+                      </IconButton>
                     )}
                   </>
                 )}
@@ -329,13 +354,13 @@ export function WorldDetailPage() {
                 <WorldCreationWizard worldId={world.id} onWorldGenerated={onWorldGenerated} />
               ) : (
                 <>
-                  <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
+                  <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
                     {world.status !== 'approved' && <h3 style={{ marginTop: 0 }}>Vista previa (solo lectura)</h3>}
                     {rendered}
                   </div>
 
                   {world.status !== 'approved' && (
-                    <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
+                    <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
                       <h3 style={{ marginTop: 0 }}>Borrador (content_draft)</h3>
                       <textarea
                         value={content}
@@ -347,7 +372,7 @@ export function WorldDetailPage() {
                           fontSize: 13,
                           padding: 10,
                           borderRadius: 10,
-                          border: '1px solid rgba(255,255,255,0.12)',
+                          border: '1px solid var(--border-subtle)',
                           background: 'rgba(0,0,0,0.25)',
                           color: 'inherit',
                         }}
@@ -360,14 +385,14 @@ export function WorldDetailPage() {
           )}
 
           {tab === 'campañas' && (
-            <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12 }}>
+            <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
               <h3 style={{ marginTop: 0 }}>Campañas vinculadas</h3>
-              {campaignsError && <div style={{ color: 'salmon' }}>{campaignsError}</div>}
+              {campaignsError && <div style={{ color: 'var(--danger)' }}>{campaignsError}</div>}
               {!campaigns && !campaignsError && campaignsLoading && <div>Cargando…</div>}
               {campaigns && (
                 <div style={{ overflow: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead style={{ background: 'rgba(255,255,255,0.04)' }}>
+                    <thead style={{ background: 'var(--table-header-bg)' }}>
                       <tr>
                         <th style={{ textAlign: 'left', padding: 10 }}>Nombre</th>
                         <th style={{ textAlign: 'left', padding: 10 }}>Resumen inicial</th>
@@ -382,7 +407,7 @@ export function WorldDetailPage() {
                         </tr>
                       )}
                       {campaigns.map((c) => (
-                        <tr key={c.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                        <tr key={c.id} style={{ borderTop: '1px solid var(--table-row-border)' }}>
                           <td style={{ padding: 10 }}>
                             <Link to={`/campaigns/${c.id}`}>{c.name}</Link>
                           </td>
