@@ -259,6 +259,8 @@ La subida desde **Documentos** encola un trabajo en BD; el proceso **`ingest-wor
 
 La imagen del backend es **grande** (PyTorch / `sentence-transformers`). En Compose se fuerza **`EMBEDDINGS_DEVICE=cpu`**; para GPU haría falta configurar el runtime de NVIDIA y una imagen base distinta.
 
+**Paridad con Kubernetes:** se usan las mismas imágenes y entrypoints (`docker-entrypoint.sh` con espera a Postgres + `alembic upgrade head` + uvicorn; `docker-entrypoint-worker.sh` con la misma espera, `alembic upgrade head` idempotente y el worker de ingesta). Variables alineadas: `POSTGRES_URL`, `EMBEDDINGS_DEVICE`, `INGEST_WORKER_AUTOSTART=false`, `SETUP_MASTER_PASSWORD` (API y worker), Nginx con `BACKEND_UPSTREAM` al host del API. El **frontend** y el **ingest-worker** esperan a que el **backend** esté sano (`healthcheck` sobre `GET /health`), equivalente a desplegar el API antes de asumir tráfico o trabajo de cola.
+
 ### Kubernetes
 
 Manifiesto de ejemplo (Postgres con pgvector, API + worker en un solo `Deployment`, PVCs para datos, frontend Nginx): [`deploy/k8s/all-in-one.yaml`](deploy/k8s/all-in-one.yaml).

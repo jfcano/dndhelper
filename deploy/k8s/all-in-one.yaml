@@ -1,4 +1,6 @@
-# Despliegue completo en un solo archivo. Antes de aplicar:
+# Despliegue completo en un solo archivo. El worker usa la misma imagen/entrypoint que en
+# docker-compose: espera a Postgres, alembic upgrade head (idempotente), ingest_worker.
+# Antes de aplicar:
 # 1) Construye y etiqueta las imágenes (contexto raíz del repo para backend):
 #    docker build -f backend/Dockerfile -t dndhelper-backend:latest .
 #    docker build -f frontend/Dockerfile -t dndhelper-frontend:latest ./frontend
