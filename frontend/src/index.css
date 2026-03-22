@@ -42,9 +42,12 @@
   --btn-inset-hover: rgba(255, 255, 255, 0.08);
 
   /* Estados */
-  --danger: #e8a0a0;
-  --danger-bg: rgba(139, 41, 66, 0.22);
-  --danger-border: rgba(232, 140, 140, 0.35);
+  /* Alertas / borrado: texto claro sobre fondo rojo vino saturado (legible en oscuro) */
+  --danger: #ffe4e4;
+  --danger-bg: rgba(72, 14, 26, 0.92);
+  --danger-border: rgba(255, 110, 125, 0.55);
+  --danger-button: #c73e4e;
+  --danger-button-text: #fffaf9;
   --success: #9cb88c;
   --code-bg: rgba(0, 0, 0, 0.35);
 
@@ -117,6 +120,8 @@ html[data-theme='light'] {
   --danger: #a63d3d;
   --danger-bg: rgba(166, 61, 61, 0.12);
   --danger-border: rgba(166, 61, 61, 0.35);
+  --danger-button: #a63d3d;
+  --danger-button-text: #fffaf9;
   --success: #4a6b3a;
   --code-bg: rgba(58, 50, 40, 0.07);
 

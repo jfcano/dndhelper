@@ -1,7 +1,45 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { ConfirmCascadeDeleteDialog } from '../components/ConfirmCascadeDeleteDialog'
 import { api } from '../lib/api'
 import type { OwnerSettingsStatus, RagClearResponse, RagClearTarget } from '../lib/api'
 import { formatError } from '../lib/errors'
+
+function ragClearDialogCopy(targets: RagClearTarget[]) {
+  const hasM = targets.includes('manuals')
+  const hasC = targets.includes('campaign')
+  if (hasM && hasC) {
+    return {
+      title: 'Vaciar ambas colecciones RAG',
+      description:
+        'Se borrarán por completo los dos índices vectoriales de tu cuenta: manuales/reglas y referencias de campaña. ' +
+        'Hasta que vuelvas a subir documentos y a indexarlos, las consultas RAG no tendrán contexto de reglas ni de campaña.',
+      confirmLabel: 'Sí, vaciar ambas colecciones',
+    }
+  }
+  if (hasM) {
+    return {
+      title: 'Vaciar colección de manuales y reglas (RAG)',
+      description:
+        'Se eliminará el índice semántico usado para consultas sobre reglas y manuales. ' +
+        'Las campañas y el resto de datos en tablas no se borran, pero no podrás basar respuestas en esos PDF/textos hasta reindexar.',
+      confirmLabel: 'Sí, vaciar manuales / reglas',
+    }
+  }
+  return {
+    title: 'Vaciar colección de referencias de campaña (RAG)',
+    description:
+      'Se eliminará el índice de textos de referencia de campaña (brief, notas sincronizadas, etc.). ' +
+      'Las campañas y sesiones en la base de datos siguen existiendo; solo se pierde el índice para consultas RAG sobre ese contenido hasta que se vuelva a indexar.',
+    confirmLabel: 'Sí, vaciar referencias de campaña',
+  }
+}
+
+const RAG_CLEAR_DETAILS = [
+  'Vectores (embeddings) en la base de datos para la colección elegida.',
+  'Trabajos de ingesta y entradas de cola en la página «Documentos» para ese destino.',
+  'Ficheros subidos (PDF, TXT, DOCX) en la carpeta de uploads del servidor asociada a esos trabajos.',
+  'Manifiestos locales de ingesta y, si aplica, metadatos de reindexado de campañas vinculados a esas colecciones.',
+] as const
 
 export function SettingsPage() {
   const [status, setStatus] = useState<OwnerSettingsStatus | null>(null)
@@ -13,6 +51,12 @@ export function SettingsPage() {
   const [ragClearBusy, setRagClearBusy] = useState(false)
   const [ragClearResult, setRagClearResult] = useState<RagClearResponse | null>(null)
   const [ragClearError, setRagClearError] = useState<string | null>(null)
+  const [ragClearDialogTargets, setRagClearDialogTargets] = useState<RagClearTarget[] | null>(null)
+
+  const ragClearDialogMeta = useMemo(
+    () => (ragClearDialogTargets ? ragClearDialogCopy(ragClearDialogTargets) : null),
+    [ragClearDialogTargets],
+  )
 
   async function load() {
     setError(null)
@@ -92,25 +136,15 @@ export function SettingsPage() {
     }
   }
 
-  async function runClearRag(targets: RagClearTarget[]) {
-    const labels =
-      targets.length === 2
-        ? 'manuales/reglas y referencias de campaña'
-        : targets[0] === 'manuals'
-          ? 'solo la colección de manuales y reglas'
-          : 'solo la colección de referencias de campaña'
-    const msg = [
-      '¿Seguro? Se eliminarán los vectores en Postgres para',
-      labels + ',',
-      'se borrarán los trabajos de subida asociados y los ficheros bajo tu carpeta de uploads,',
-      'y se limpiarán los manifiestos locales. Esta acción no se puede deshacer.',
-    ].join(' ')
-    if (!window.confirm(msg)) return
+  async function confirmClearRag() {
+    if (!ragClearDialogTargets) return
+    const targets = ragClearDialogTargets
     setRagClearBusy(true)
     setRagClearError(null)
     setRagClearResult(null)
     try {
       setRagClearResult(await api.clearRagCollections(targets))
+      setRagClearDialogTargets(null)
     } catch (e) {
       setRagClearError(formatError(e))
     } finally {
@@ -232,11 +266,31 @@ export function SettingsPage() {
         .
       </p>
 
+      {ragClearDialogMeta && ragClearDialogTargets ? (
+        <ConfirmCascadeDeleteDialog
+          open
+          onClose={() => {
+            if (!ragClearBusy) setRagClearDialogTargets(null)
+          }}
+          title={ragClearDialogMeta.title}
+          description={ragClearDialogMeta.description}
+          details={[...RAG_CLEAR_DETAILS]}
+          detailsSectionTitle="Se eliminará permanentemente del servidor:"
+          confirmLabel={ragClearDialogMeta.confirmLabel}
+          cancelLabel="Cancelar"
+          busy={ragClearBusy}
+          busyLabel="Vaciando índices…"
+          size="large"
+          highRisk
+          onConfirm={() => void confirmClearRag()}
+        />
+      ) : null}
+
       <div
         className="card-panel rag-query-form"
-        style={{ marginTop: '1.75rem', borderColor: 'var(--danger, #a44)' }}
+        style={{ marginTop: '1.75rem', borderColor: 'var(--danger-border)' }}
       >
-        <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.05rem', color: 'var(--danger, #c44)' }}>
+        <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.05rem', color: 'var(--danger)' }}>
           Limpiar índices RAG
         </h3>
         <p className="muted" style={{ marginTop: 0, fontSize: '0.9rem' }}>
@@ -246,18 +300,26 @@ export function SettingsPage() {
           cola de trabajos en <strong>Documentos</strong> se vaciará para los destinos que borres.
         </p>
         <div className="btn-row" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
-          <button type="button" disabled={ragClearBusy || saving} onClick={() => void runClearRag(['manuals'])}>
-            {ragClearBusy ? '…' : 'Vaciar manuales / reglas'}
-          </button>
-          <button type="button" disabled={ragClearBusy || saving} onClick={() => void runClearRag(['campaign'])}>
-            {ragClearBusy ? '…' : 'Vaciar referencias de campaña'}
+          <button
+            type="button"
+            disabled={ragClearBusy || saving}
+            onClick={() => setRagClearDialogTargets(['manuals'])}
+          >
+            Vaciar manuales / reglas
           </button>
           <button
             type="button"
             disabled={ragClearBusy || saving}
-            onClick={() => void runClearRag(['manuals', 'campaign'])}
+            onClick={() => setRagClearDialogTargets(['campaign'])}
           >
-            {ragClearBusy ? '…' : 'Vaciar ambas colecciones'}
+            Vaciar referencias de campaña
+          </button>
+          <button
+            type="button"
+            disabled={ragClearBusy || saving}
+            onClick={() => setRagClearDialogTargets(['manuals', 'campaign'])}
+          >
+            Vaciar ambas colecciones
           </button>
         </div>
         {ragClearError ? <div className="error-banner" style={{ marginTop: '0.75rem' }}>{ragClearError}</div> : null}

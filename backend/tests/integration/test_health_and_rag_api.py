@@ -211,3 +211,22 @@ def test_rag_clear_manuals_and_campaign(client, monkeypatch: pytest.MonkeyPatch)
     cleared = set(r.json()["targets_cleared"])
     assert cleared >= {"manuals", "campaign"}
 
+
+def test_rag_clear_does_not_use_vector_store_or_openai_embeddings(client, monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Vaciar índices debe borrar filas en Postgres sin instanciar PGVector/OpenAIEmbeddings
+    (antes fallaba con 500 si no había clave OpenAI en contexto HTTP).
+    """
+    from backend.app import vector_store as vector_store_mod
+
+    def boom(**kwargs: object) -> None:
+        raise AssertionError("get_vector_store no debe usarse al vaciar índices RAG")
+
+    monkeypatch.setattr(vector_store_mod, "get_vector_store", boom)
+
+    r = client.post("/api/rag/clear", json={"targets": ["manuals"]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "manuals" in body["targets_cleared"]
+    assert "collections_dropped" in body
+

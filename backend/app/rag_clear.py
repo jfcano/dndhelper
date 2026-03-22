@@ -4,15 +4,15 @@ import logging
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
 from backend.app.campaign_rag_sync import clear_campaign_sync_manifest_for_owner
+from backend.app.config import get_settings
 from backend.app.ingest import remove_manifest_entries_for_collection
 from backend.app.ingest_job_repo import remove_ingest_job_and_pdf
 from backend.app.models import IngestJob
 from backend.app.rag_collection import rag_campaign_refs_collection_for_owner, rag_manuals_collection_for_owner
-from backend.app.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +38,44 @@ def _job_rag_target(
 
 
 def _drop_collection(collection_name: str) -> bool:
+    """
+    Elimina la fila en ``langchain_pg_collection`` por nombre (CASCADE a embeddings).
+
+    No usa ``get_vector_store()`` / ``OpenAIEmbeddings``: la ruta de borrado debe funcionar
+    aunque no haya clave OpenAI en contexto (p. ej. usuario sin clave en Ajustes).
+    """
+    settings = get_settings()
+    if not settings.postgres_url:
+        logger.error("rag_clear: falta POSTGRES_URL; no se puede vaciar el índice vectorial.")
+        return False
     try:
-        vs = get_vector_store(collection_name=collection_name)
-        vs.delete_collection()
-        logger.info("rag_clear: colección PGVector eliminada: %s", collection_name)
+        engine = create_engine(
+            settings.postgres_url,
+            connect_args={"connect_timeout": settings.postgres_connect_timeout_s},
+            pool_pre_ping=True,
+        )
+        with engine.begin() as conn:
+            result = conn.execute(
+                text("DELETE FROM langchain_pg_collection WHERE name = :name"),
+                {"name": collection_name},
+            )
+        n = getattr(result, "rowcount", None) or 0
+        if n > 0:
+            logger.info("rag_clear: colección PGVector eliminada (%d filas): %s", n, collection_name)
+        else:
+            logger.info(
+                "rag_clear: no había colección con nombre %s en langchain_pg_collection (nada que borrar)",
+                collection_name,
+            )
         return True
     except Exception as e:
+        err = str(e).lower()
+        if "does not exist" in err or "undefinedtable" in err:
+            logger.info(
+                "rag_clear: tablas langchain aún no creadas; nada que borrar para %s",
+                collection_name,
+            )
+            return True
         logger.warning("rag_clear: no se pudo eliminar la colección %s: %s", collection_name, e)
         return False
 
