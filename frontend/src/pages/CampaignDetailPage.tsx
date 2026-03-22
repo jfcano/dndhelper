@@ -278,6 +278,11 @@ export function CampaignDetailPage() {
   const [nameSaving, setNameSaving] = useState(false)
   const [storyEditorText, setStoryEditorText] = useState('')
   const [storySaving, setStorySaving] = useState(false)
+  const [outlineEditorText, setOutlineEditorText] = useState('')
+  const [outlineDirty, setOutlineDirty] = useState(false)
+  const [outlineGenerating, setOutlineGenerating] = useState(false)
+  const [outlineSaving, setOutlineSaving] = useState(false)
+  const [outlineApproving, setOutlineApproving] = useState(false)
   const [campaignNameEditor, setCampaignNameEditor] = useState('')
   const [campaignNameDirty, setCampaignNameDirty] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -763,6 +768,37 @@ export function CampaignDetailPage() {
   }, [campaign?.brief_status, campaign?.story_draft])
 
   useEffect(() => {
+    setOutlineDirty(false)
+  }, [campaign?.id])
+
+  useEffect(() => {
+    if (!campaign) return
+    if (campaign.brief_status !== 'approved') return
+    if (outlineDirty) return
+    const raw =
+      campaign.outline_status === 'approved'
+        ? (campaign.outline_final ?? '')
+        : (campaign.outline_draft ?? '')
+    if (!raw.trim()) {
+      setOutlineEditorText('')
+      return
+    }
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      setOutlineEditorText(JSON.stringify(parsed, null, 2))
+    } catch {
+      setOutlineEditorText(raw)
+    }
+  }, [
+    campaign?.id,
+    campaign?.brief_status,
+    campaign?.outline_draft,
+    campaign?.outline_final,
+    campaign?.outline_status,
+    outlineDirty,
+  ])
+
+  useEffect(() => {
     if (!campaign) return
     if (campaignNameDirty) return
     setCampaignNameEditor(campaign.name ?? '')
@@ -785,7 +821,26 @@ export function CampaignDetailPage() {
     if (!linked || linked !== worldId) setStep(0)
   }, [id, campaign, step, worldId])
 
-  const worldOptions = useMemo(() => worlds ?? [], [worlds])
+  /** Mundos elegibles: solo aprobados; si la campaña ya tiene un mundo no aprobado vinculado, se muestra también para poder desvincular o cambiar. */
+  const worldOptions = useMemo(() => {
+    const all = worlds ?? []
+    const approved = all.filter((w) => (w.status ?? '').toLowerCase() === 'approved')
+    const wid = campaign?.world_id
+    if (!wid) return approved
+    const linked = all.find((w) => w.id === wid)
+    if (!linked) return approved
+    if (approved.some((w) => w.id === linked.id)) return approved
+    return [linked, ...approved]
+  }, [worlds, campaign?.world_id])
+  const linkedWorld = useMemo(() => {
+    if (!campaign?.world_id || !worlds) return null
+    return worlds.find((w) => w.id === campaign.world_id) ?? null
+  }, [campaign?.world_id, worlds])
+  /** Misma condición que el backend para `outline:generate`. */
+  const worldReadyForOutline = useMemo(() => {
+    if (!linkedWorld) return false
+    return linkedWorld.status === 'approved' && !!(linkedWorld.content_final ?? '').trim()
+  }, [linkedWorld])
   const themes = useMemo(() => wizard.themes.map((t) => t.trim()).filter(Boolean), [wizard.themes])
   const inspirations = useMemo(() => wizard.inspirations.map((t) => t.trim()).filter(Boolean), [wizard.inspirations])
   const visibleSteps = useExistingWorld === true ? [0, 2, 3] : [0, 1, 2, 3, 4]
@@ -968,6 +1023,64 @@ export function CampaignDetailPage() {
     }
   }
 
+  async function onGenerateOutline() {
+    if (!id || !campaign) return
+    setOutlineGenerating(true)
+    setError(null)
+    setOk(null)
+    try {
+      const updated = await api.generateOutlineForCampaign(id)
+      setCampaign(updated)
+      setOutlineDirty(false)
+      setOk('Outline generado. Revísalo y aprueba cuando esté listo.')
+    } catch (e) {
+      setError(formatError(e))
+    } finally {
+      setOutlineGenerating(false)
+    }
+  }
+
+  async function onSaveOutlineDraft() {
+    if (!id || !campaign) return
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(outlineEditorText) as Record<string, unknown>
+    } catch {
+      setError('El outline no es JSON válido.')
+      return
+    }
+    setOutlineSaving(true)
+    setError(null)
+    setOk(null)
+    try {
+      const updated = await api.patchCampaignOutline(id, parsed)
+      setCampaign(updated)
+      setOutlineDirty(false)
+      setOk('Outline guardado')
+    } catch (e) {
+      setError(formatError(e))
+    } finally {
+      setOutlineSaving(false)
+    }
+  }
+
+  async function onApproveOutline() {
+    if (!id || !campaign) return
+    setOutlineApproving(true)
+    setError(null)
+    setOk(null)
+    try {
+      const updated = await api.approveCampaignOutline(id)
+      setCampaign(updated)
+      setOutlineDirty(false)
+      setOk('Outline aprobado. Ya puedes crear sesiones.')
+    } catch (e) {
+      setError(formatError(e))
+    } finally {
+      setOutlineApproving(false)
+    }
+  }
+
   async function onReopenCampaign() {
     if (!id || !campaign) return
     setReopening(true)
@@ -1128,6 +1241,10 @@ export function CampaignDetailPage() {
               <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
                 <div style={{ display: 'grid', gap: 8 }}>
                   <div style={{ opacity: 0.8, fontSize: 13 }}>Mundo para la campaña</div>
+                  <div style={{ opacity: 0.65, fontSize: 12 }}>
+                    Solo aparecen mundos <strong>aprobados</strong> (el resto sigue en Mundos hasta aprobar el
+                    contenido).
+                  </div>
                   {!worlds && <div>Cargando mundos…</div>}
                   {worlds && (
                     <>
@@ -1139,6 +1256,12 @@ export function CampaignDetailPage() {
                           </option>
                         ))}
                       </select>
+                      {worldOptions.length === 0 ? (
+                        <div style={{ opacity: 0.85, fontSize: 13 }}>
+                          No hay mundos aprobados. Crea uno en <Link to="/worlds">Mundos</Link>, rellena el contenido y
+                          pulsa aprobar.
+                        </div>
+                      ) : null}
                       <IconButton
                         label="Vincular mundo a la campaña"
                         textShort="Vincular"
@@ -1480,6 +1603,7 @@ export function CampaignDetailPage() {
                   )}
                 </>
               ) : (
+                <>
                 <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, marginTop: 4 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
                     <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>Resumen final de historia</h3>
@@ -1497,6 +1621,137 @@ export function CampaignDetailPage() {
                   </div>
                   <div style={{ marginTop: 10 }}>{storyFinalRendered}</div>
                 </div>
+
+                <div
+                  style={{
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 12,
+                    padding: 12,
+                    marginTop: 16,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                    <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>Outline de campaña</h3>
+                    <div style={{ fontSize: 13, opacity: 0.85 }}>{toSpanishStatus(campaign.outline_status)}</div>
+                  </div>
+                  <p style={{ margin: '10px 0 0', opacity: 0.85, fontSize: 13, lineHeight: 1.5 }}>
+                    El outline estructura el arco narrativo. Es obligatorio <strong>generarlo</strong> (o pegar JSON
+                    válido), <strong>guardarlo</strong> y <strong>aprobarlo</strong> antes de poder crear sesiones. La
+                    API exige un <strong>mundo vinculado aprobado</strong> con <strong>contenido final</strong> para
+                    generarlo con IA.
+                  </p>
+                  {!campaign.world_id ? (
+                    <div style={{ marginTop: 10, opacity: 0.85, fontSize: 13 }}>
+                      Vincula un mundo a esta campaña para poder generar el outline.
+                    </div>
+                  ) : !worldReadyForOutline ? (
+                    <div style={{ marginTop: 10, opacity: 0.85, fontSize: 13 }}>
+                      El mundo «{linkedWorld?.name ?? campaign.world_id}» debe estar{' '}
+                      <strong>aprobado</strong> y tener <strong>contenido final</strong>. Ábrelo en Mundos y aprueba
+                      el texto antes de generar el outline.
+                    </div>
+                  ) : null}
+
+                  {campaign.outline_status !== 'approved' ? (
+                    <>
+                      <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                        <IconButton
+                          label="Generar outline con IA"
+                          textShort="Generar"
+                          busy={outlineGenerating}
+                          busyLabel="Generando outline…"
+                          busyShort="…"
+                          disabled={
+                            saving ||
+                            outlineSaving ||
+                            outlineApproving ||
+                            !worldReadyForOutline ||
+                            campaign.outline_status === 'approved'
+                          }
+                          className="btn-icon--inline"
+                          onClick={() => void onGenerateOutline()}
+                        >
+                          <IconSparkles />
+                        </IconButton>
+                        <IconButton
+                          label="Guardar borrador del outline (JSON)"
+                          textShort="Guardar"
+                          busy={outlineSaving}
+                          busyLabel="Guardando…"
+                          busyShort="…"
+                          disabled={
+                            saving ||
+                            outlineGenerating ||
+                            outlineApproving ||
+                            !outlineEditorText.trim()
+                          }
+                          className="btn-icon--inline"
+                          onClick={() => void onSaveOutlineDraft()}
+                        >
+                          <IconSave />
+                        </IconButton>
+                        <IconButton
+                          label="Aprobar outline"
+                          textShort="Aprobar"
+                          busy={outlineApproving}
+                          busyLabel="Aprobando…"
+                          busyShort="…"
+                          disabled={
+                            saving ||
+                            outlineGenerating ||
+                            outlineSaving ||
+                            !campaign.outline_draft?.trim()
+                          }
+                          className="btn-icon--inline"
+                          onClick={() => void onApproveOutline()}
+                        >
+                          <IconCheck />
+                        </IconButton>
+                      </div>
+                      <label style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+                        <span style={{ opacity: 0.75, fontSize: 12 }}>Borrador (JSON editable)</span>
+                        <textarea
+                          rows={14}
+                          value={outlineEditorText}
+                          onChange={(e) => {
+                            setOutlineEditorText(e.target.value)
+                            setOutlineDirty(true)
+                          }}
+                          spellCheck={false}
+                          style={{
+                            width: '100%',
+                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                            fontSize: 12,
+                            padding: 10,
+                            borderRadius: 10,
+                            border: '1px solid var(--border-subtle)',
+                            background: 'rgba(0,0,0,0.25)',
+                            color: 'inherit',
+                          }}
+                          disabled={outlineGenerating || outlineSaving || outlineApproving}
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <pre
+                      style={{
+                        marginTop: 12,
+                        padding: 12,
+                        borderRadius: 10,
+                        border: '1px solid var(--border-subtle)',
+                        background: 'rgba(0,0,0,0.2)',
+                        fontSize: 12,
+                        overflow: 'auto',
+                        maxHeight: 360,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {outlineEditorText || '(vacío)'}
+                    </pre>
+                  )}
+                </div>
+                </>
               )}
                 </>
               )}

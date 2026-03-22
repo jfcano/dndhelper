@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, worldImageUrl } from '../lib/api'
+import { getAccessToken } from '../lib/authToken'
 import type { Campaign, World, WorldVisualAssets, WorldVisualGeneratePayload } from '../lib/api'
 import { formatError } from '../lib/errors'
 import { toSpanishStatus } from '../lib/statusLabels'
@@ -201,6 +202,7 @@ function VisualSlotCard(props: {
   /** Evita caché agresiva de `<img>`: cada bust hace fetch con no-store y muestra un blob nuevo. */
   const blobRef = useRef<string | null>(null)
   const [imgSrc, setImgSrc] = useState<string | null>(null)
+  const [imageLoadError, setImageLoadError] = useState(false)
 
   useEffect(() => {
     let dead = false
@@ -210,6 +212,7 @@ function VisualSlotCard(props: {
         blobRef.current = null
       }
       setImgSrc(null)
+      setImageLoadError(false)
       return
     }
     const direct = worldImageUrl(worldId, displayFile, imageCacheBuster)
@@ -219,13 +222,19 @@ function VisualSlotCard(props: {
       blobRef.current = null
     }
     setImgSrc(null)
+    setImageLoadError(false)
 
     ;(async () => {
       try {
-        const res = await fetch(direct, { cache: 'no-store', signal: ac.signal })
+        const tok = getAccessToken()
+        const res = await fetch(direct, {
+          cache: 'no-store',
+          signal: ac.signal,
+          headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+        })
         if (dead || ac.signal.aborted) return
         if (!res.ok) {
-          if (!dead) setImgSrc(direct)
+          if (!dead) setImageLoadError(true)
           return
         }
         const blob = await res.blob()
@@ -238,7 +247,7 @@ function VisualSlotCard(props: {
         blobRef.current = u
         setImgSrc(u)
       } catch {
-        if (!dead && !ac.signal.aborted) setImgSrc(direct)
+        if (!dead && !ac.signal.aborted) setImageLoadError(true)
       }
     })()
 
@@ -278,7 +287,11 @@ function VisualSlotCard(props: {
         }}
       >
         {displayFile ? (
-          imgSrc ? (
+          imageLoadError ? (
+            <span style={{ opacity: 0.75, fontSize: 14, padding: 16, textAlign: 'center' }}>
+              No se pudo cargar la imagen (¿sesión caducada?). Vuelve a iniciar sesión o recarga.
+            </span>
+          ) : imgSrc ? (
             <img src={imgSrc} alt={title} style={{ width: '100%', height: 'auto', display: 'block' }} />
           ) : (
             <span style={{ opacity: 0.55, fontSize: 14, padding: 16, textAlign: 'center' }}>Cargando imagen…</span>

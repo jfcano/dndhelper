@@ -453,6 +453,12 @@ export const api = {
     }),
   generateWorldForCampaign: (id: UUID) =>
     request<Campaign>(`/api/campaigns/${id}/world:generate`, { method: 'POST', body: '{}' }),
+  generateOutlineForCampaign: (id: UUID) =>
+    request<Campaign>(`/api/campaigns/${id}/outline:generate`, { method: 'POST', body: '{}' }),
+  patchCampaignOutline: (id: UUID, outline: Record<string, unknown>) =>
+    request<Campaign>(`/api/campaigns/${id}/outline`, { method: 'PATCH', body: JSON.stringify(outline) }),
+  approveCampaignOutline: (id: UUID) =>
+    request<Campaign>(`/api/campaigns/${id}/outline/approve`, { method: 'POST', body: '{}' }),
   deleteCampaign: (id: UUID, options?: { cascade?: boolean }) => {
     const q = options?.cascade ? '?cascade=true' : ''
     return request<{ ok: boolean }>(`/api/campaigns/${id}${q}`, { method: 'DELETE' })

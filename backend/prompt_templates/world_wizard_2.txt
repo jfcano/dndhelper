@@ -8,7 +8,7 @@ Contexto RAG (reglas/lore):
 __RAG_CONTEXT_JSON__
 
 Restricciones de salida:
-- Genera SIEMPRE al menos 5 facciones.
+- Genera SIEMPRE al menos 3 facciones.
 - Cada facción debe tener nombre y objetivo claros.
 
 Devuelve únicamente JSON válido con esta estructura:

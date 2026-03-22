@@ -8,7 +8,7 @@ Contexto RAG (reglas/lore):
 __RAG_CONTEXT_JSON__
 
 Restricciones de salida:
-- Genera entre 4 y 5 personajes por cada facción existente en el wizard.
+- Genera entre 2 y 3 personajes por cada facción existente en el wizard para hacer un total de 10 a 15 personajes
 - Usa exactamente el nombre de facción en "faction_name".
 
 Devuelve únicamente JSON válido con esta estructura:
