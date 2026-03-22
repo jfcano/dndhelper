@@ -24,6 +24,8 @@ services:
     environment:
       POSTGRES_URL: postgresql+psycopg://dndhelper:dndhelper@db:5432/dndhelper
       EMBEDDINGS_DEVICE: cpu
+      # Instalación inicial por UI si no defines ADMIN_* en .env (cámbiala en producción).
+      SETUP_MASTER_PASSWORD: ${SETUP_MASTER_PASSWORD:-local-dev-setup-master}
       # El servicio «ingest-worker» ya indexa la cola; evitar un segundo worker dentro del contenedor del API.
       INGEST_WORKER_AUTOSTART: "false"
     volumes:
@@ -47,7 +49,7 @@ services:
     volumes:
       - ./backend/data:/app/backend/data
       - ./backend/storage:/app/backend/storage
-    command: ["python", "-m", "backend.scripts.ingest_worker"]
+    entrypoint: ["/usr/local/bin/docker-entrypoint-worker.sh"]
     depends_on:
       db:
         condition: service_healthy
@@ -56,6 +58,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    environment:
+      BACKEND_UPSTREAM: backend:8000
     ports:
       - "80:80"
     depends_on:

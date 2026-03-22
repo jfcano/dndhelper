@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { setAccessToken } from '../lib/authToken'
@@ -10,6 +10,23 @@ export function RegisterPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const s = await api.getSetupStatus()
+        if (!cancelled && s.needs_setup) {
+          navigate('/setup', { replace: true })
+        }
+      } catch {
+        /* ignorar */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [navigate])
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()

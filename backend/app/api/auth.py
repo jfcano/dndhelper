@@ -8,7 +8,7 @@ from backend.app.auth_password import hash_password, verify_password
 from backend.app.db import get_db
 from backend.app.owner_context import get_owner_id
 from backend.app.schemas import AuthTokenResponse, UserLogin, UserPublic, UserRegister
-from backend.app.user_repo import create_user, get_user_by_id, get_user_by_username
+from backend.app.user_repo import create_user, get_user_by_id, get_user_by_username, has_any_admin
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -19,6 +19,11 @@ def _normalize_username(raw: str) -> str:
 
 @router.post("/register", response_model=AuthTokenResponse)
 def register(payload: UserRegister, db: Session = Depends(get_db)) -> AuthTokenResponse:
+    if not has_any_admin(db):
+        raise HTTPException(
+            status_code=403,
+            detail="Completa primero la instalación inicial (cuenta de administrador) antes de registrar usuarios.",
+        )
     uname = _normalize_username(payload.username)
     if len(uname) < 3:
         raise HTTPException(status_code=400, detail="El nombre de usuario es demasiado corto.")

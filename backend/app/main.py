@@ -19,6 +19,7 @@ from backend.app.api.campaigns import router as campaigns_router
 from backend.app.api.sessions import router as sessions_router
 from backend.app.api.settings import router as settings_router
 from backend.app.api.worlds import router as worlds_router
+from backend.app.api.setup import router as setup_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,11 +44,21 @@ def _terminate_ingest_worker(proc: subprocess.Popen) -> None:
 async def lifespan(app: FastAPI):
     from backend.app.config import get_settings
     from backend.app.db import get_sessionmaker
-    from backend.app.user_repo import ensure_admin_user_from_env
+    from backend.app.user_repo import ensure_admin_user_from_env, has_any_admin
 
     SessionLocal = get_sessionmaker()
     with SessionLocal() as db:
         ensure_admin_user_from_env(db)
+        settings = get_settings()
+        if not has_any_admin(db):
+            if settings.admin_username and settings.admin_password:
+                pass
+            elif not settings.setup_master_password:
+                logger.error(
+                    "Arranque abortado: no hay administrador en la base de datos ni ADMIN_USERNAME/ADMIN_PASSWORD "
+                    "en el entorno. Define SETUP_MASTER_PASSWORD para permitir la instalación inicial por interfaz."
+                )
+                raise SystemExit(1)
 
     settings = get_settings()
     ingest_procs: list[subprocess.Popen] = []
@@ -100,6 +111,7 @@ app.include_router(sessions_router, prefix="/api")
 app.include_router(campaigns_router, prefix="/api")
 app.include_router(worlds_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
+app.include_router(setup_router, prefix="/api")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -113,6 +125,24 @@ def index():
 @app.get("/health")
 def health() -> dict:
     return {"ok": True}
+
+
+@app.get("/health/ready")
+def health_ready() -> dict:
+    from sqlalchemy import text
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from backend.app.db import get_sessionmaker
+
+    try:
+        SessionLocal = get_sessionmaker()
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+    except (RuntimeError, SQLAlchemyError, OSError) as e:
+        logger.warning("Readiness fallida: %s", e)
+        raise HTTPException(status_code=503, detail="Base de datos no disponible.")
+    return {"ok": True}
+
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_index():

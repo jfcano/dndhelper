@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.auth_password import hash_password
@@ -16,6 +16,11 @@ def get_user_by_username(db: Session, username_normalized: str) -> User | None:
 
 def get_user_by_id(db: Session, user_id: UUID) -> User | None:
     return db.get(User, user_id)
+
+
+def has_any_admin(db: Session) -> bool:
+    n = db.scalar(select(func.count()).select_from(User).where(User.is_admin.is_(True)))
+    return bool(n and n > 0)
 
 
 def create_user(

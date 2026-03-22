@@ -357,7 +357,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T
 }
 
+export type SetupStatus = {
+  needs_setup: boolean
+  setup_available: boolean
+}
+
 export const api = {
+  getSetupStatus: () => request<SetupStatus>('/api/setup/status'),
+
+  setupBootstrap: (master_password: string, username: string, password: string) =>
+    request<{ ok: boolean }>('/api/setup/', {
+      method: 'POST',
+      body: JSON.stringify({ master_password, username, password }),
+    }),
+
   register: (username: string, password: string) =>
     request<AuthTokenResponse>('/api/auth/register', {
       method: 'POST',

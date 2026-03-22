@@ -19,7 +19,7 @@ El proyecto está pensado como **MVP multiplataforma** (Windows y Linux): backen
 9. [Docker Compose](#docker-compose)
 10. [Estructura del proyecto](#estructura-del-proyecto)
 11. [Funcionalidades principales](#funcionalidades-principales)
-12. [Tests](#tests)
+12. [Tests](#tests) — [E2E Playwright (frontend)](#tests-e2e-playwright-frontend)
 13. [API y referencia rápida](#api-y-referencia-rápida)
 
 ---
@@ -46,7 +46,7 @@ Los datos se aislan **por usuario registrado**: cada cuenta tiene su propio `own
 | **PDFs** | [pypdf](https://pypdf.readthedocs.io/) vía LangChain |
 | **Frontend (app principal)** | [React](https://react.dev/) 19, [React Router](https://reactrouter.com/) 7, [TypeScript](https://www.typescriptlang.org/), [Vite](https://vitejs.dev/) 8 |
 | **UI admin mínima** | HTML/JS estático servido bajo `/admin` (`backend/admin_ui/`) |
-| **Tests** | [pytest](https://pytest.org/), [HTTPX](https://www.python-httpx.org/) |
+| **Tests** | [pytest](https://pytest.org/), [HTTPX](https://www.python-httpx.org/), [Playwright](https://playwright.dev/) (E2E frontend) |
 
 Dependencias Python declaradas en `requirements.txt` (incluye paquetes LangChain y utilidades como `sentence-transformers` según el árbol de dependencias del proyecto).
 
@@ -238,7 +238,7 @@ Despliegue con **cuatro servicios**: Postgres (**pgvector**), API FastAPI, **wor
 
 **Requisitos:** [Docker](https://docs.docker.com/get-docker/) y Docker Compose v2.
 
-1. Copia `.env.example` a `.env` y completa al menos **`JWT_SECRET`** (y el resto de variables que uses; opcionalmente `ADMIN_USERNAME` / `ADMIN_PASSWORD`). El fichero **`.env`** debe existir para que Compose pueda cargarlo en los servicios `backend` e `ingest-worker`. Las claves de **OpenAI** y **Hugging Face** se configuran en la aplicación (**Ajustes**), no en el entorno.
+1. Copia `.env.example` a `.env` y completa al menos **`JWT_SECRET`** (y el resto de variables que uses; opcionalmente `ADMIN_USERNAME` / `ADMIN_PASSWORD`). Si no defines credenciales de administrador en el entorno, configura **`SETUP_MASTER_PASSWORD`** (obligatorio para arrancar sin admin en BD) y completa la **instalación inicial** en la ruta `/setup` de la aplicación. El fichero **`.env`** debe existir para que Compose pueda cargarlo en los servicios `backend` e `ingest-worker`. Las claves de **OpenAI** y **Hugging Face** se configuran en la aplicación (**Ajustes**), no en el entorno.
 2. **`POSTGRES_URL` dentro del contenedor** la fija `docker-compose.yml` apuntando al servicio `db` (`dndhelper` / `dndhelper` / base `dndhelper`). La variable de tu `.env` para Postgres **se sustituye** en Compose al arrancar el backend y el worker.
 3. Construcción y arranque:
 
@@ -246,11 +246,7 @@ Despliegue con **cuatro servicios**: Postgres (**pgvector**), API FastAPI, **wor
 docker compose up -d --build
 ```
 
-4. Aplicar migraciones (una vez la base está arriba):
-
-```bash
-docker compose run --rm backend alembic upgrade head
-```
+4. **Migraciones:** el contenedor del API ejecuta `alembic upgrade head` al arrancar (tras esperar a Postgres). Solo necesitas el paso manual `docker compose run --rm backend alembic upgrade head` si quieres aplicar migraciones sin levantar el servicio.
 
 5. **URLs habituales**
    - App React (vía Nginx): **http://localhost:80** (si el puerto 80 está ocupado o requiere permisos elevados en tu sistema, cambia en `docker-compose.yml` el mapeo del servicio `frontend`, p. ej. `8080:80`).
@@ -263,6 +259,16 @@ La subida desde **Documentos** encola un trabajo en BD; el proceso **`ingest-wor
 
 La imagen del backend es **grande** (PyTorch / `sentence-transformers`). En Compose se fuerza **`EMBEDDINGS_DEVICE=cpu`**; para GPU haría falta configurar el runtime de NVIDIA y una imagen base distinta.
 
+### Kubernetes
+
+Manifiesto de ejemplo (Postgres con pgvector, API + worker en un solo `Deployment`, PVCs para datos, frontend Nginx): [`deploy/k8s/all-in-one.yaml`](deploy/k8s/all-in-one.yaml).
+
+1. Construye las imágenes (`docker build -f backend/Dockerfile -t dndhelper-backend:latest .` y `docker build -f frontend/Dockerfile -t dndhelper-frontend:latest ./frontend`) y súbelas a tu registry si no usas imágenes locales.
+2. Edita el `Secret` `dndhelper-secrets` (contraseñas y `POSTGRES_URL` coherentes con el usuario de Postgres).
+3. Despliega: `kubectl apply -f deploy/k8s/all-in-one.yaml`
+
+Scripts de comprobación de salud reutilizables: [`scripts/healthcheck-postgres.sh`](scripts/healthcheck-postgres.sh), [`scripts/healthcheck-backend.sh`](scripts/healthcheck-backend.sh), [`scripts/healthcheck-nginx.sh`](scripts/healthcheck-nginx.sh). El worker puede usar `python -m backend.scripts.health_ingest`.
+
 ---
 
 ## Estructura del proyecto
@@ -271,6 +277,7 @@ La imagen del backend es **grande** (PyTorch / `sentence-transformers`). En Comp
 dndhelper/
 ├── .env.example              # Plantilla de variables de entorno
 ├── docker-compose.yml        # Postgres + backend + ingest-worker + frontend (Nginx)
+├── deploy/k8s/               # Manifiesto Kubernetes (ej. all-in-one.yaml)
 ├── alembic.ini               # Configuración de Alembic
 ├── alembic/                  # Migraciones SQL (versiones en versions/)
 ├── requirements.txt          # Dependencias Python
@@ -370,6 +377,49 @@ $env:POSTGRES_TEST_URL="postgresql+psycopg://user:pass@host:5432/db_test"
 export POSTGRES_TEST_URL="postgresql+psycopg://user:pass@host:5432/db_test"
 ./scripts/test.sh
 ```
+
+**Todo junto (pytest + Playwright):** con la API en marcha para la parte E2E, desde la raíz del repo:
+
+- **Windows (PowerShell):** `./scripts/test-all.ps1`
+- **Linux / macOS:** `./scripts/test-all.sh`
+
+Solo pytest: `./scripts/test-all.ps1 -SkipE2E` o `SKIP_E2E=1 ./scripts/test-all.sh`. Solo E2E: `-SkipBackend` / `SKIP_BACKEND=1`.
+
+### Tests E2E (Playwright, frontend)
+
+Pruebas en navegador bajo `frontend/e2e/`: rutas React, token en `localStorage`, proxy `/api` de Vite y flujos de UI que no cubre `TestClient`.
+
+**Requisitos:** Node.js, backend FastAPI y PostgreSQL en marcha (p. ej. `uvicorn` en `127.0.0.1:8000`, igual que el proxy de `frontend/vite.config.ts`). Instala los navegadores de Playwright una vez:
+
+```bash
+cd frontend
+npm install
+npx playwright install chromium
+```
+
+**Ejecución recomendada (dos terminales):**
+
+1. Terminal A: base de datos + API (misma `POSTGRES_URL` que uses en desarrollo).
+2. Terminal B:
+
+```bash
+cd frontend
+npm run test:e2e
+```
+
+Playwright arranca **solo** el servidor de Vite (`npm run dev`) si no hay uno escuchando ya en la URL base. La API **no** la levanta el runner.
+
+**Variables útiles:**
+
+| Variable | Descripción |
+|----------|-------------|
+| `PLAYWRIGHT_BASE_URL` | URL del frontend (por defecto `http://127.0.0.1:5173`). |
+| `OPENAI_API_KEY` o `E2E_OPENAI_API_KEY` | Opcional pero necesaria para el spec largo de campaña: el test guarda la clave en **Ajustes** del usuario vía API y usa el brief con IA. Sin ella, ese caso se omite (`test.skip`). |
+| `CI` | Si está definida, Playwright no reutiliza un `vite dev` ya arrancado y activa reintentos ligeros. |
+
+**Scripts npm:** `npm run test:e2e` · `npm run test:e2e:ui`
+
+**CI (opcional):** un job reproducible suele combinar Postgres (p. ej. imagen `pgvector/pgvector`), migraciones Alembic, `uvicorn`, `npm run build` + `vite preview` y `npm run test:e2e`, con `PLAYWRIGHT_BASE_URL` apuntando al preview y el proxy de `/api` coherente con el host del backend. Puedes usar `docker compose up` como base y ejecutar Playwright en el host o en un contenedor con Node.
 
 ---
 

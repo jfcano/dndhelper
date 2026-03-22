@@ -1,0 +1,27 @@
+# Ejecución manual: requiere Postgres (pgvector), .env con JWT_SECRET/POSTGRES_URL y clave OpenAI para el spec largo de campaña.
+# Ejemplo: definir secretos OPENAI_API_KEY, JWT_SECRET y usar POSTGRES_TEST_URL o servicio postgres.
+name: E2E Playwright (frontend)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    if: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Instalar frontend y Playwright
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Placeholder
+        run: |
+          echo "Activa el job (quita if:false) y añade servicios Postgres, migraciones, uvicorn y vite preview."
+          echo "Ver README sección «Tests E2E (Playwright, frontend)»."

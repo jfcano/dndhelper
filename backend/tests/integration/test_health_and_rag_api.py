@@ -18,6 +18,12 @@ def test_health(client) -> None:
     assert r.json() == {"ok": True}
 
 
+def test_health_ready(client) -> None:
+    r = client.get("/health/ready")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+
+
 def test_query_rules_validates_empty_question(client) -> None:
     r = client.post("/api/query_rules", json={"question": "   "})
     assert r.status_code == 400
@@ -183,4 +189,25 @@ def test_rag_clear_manuals(client, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_rag_clear_rejects_empty_targets(client) -> None:
     r = client.post("/api/rag/clear", json={"targets": []})
     assert r.status_code == 422
+
+
+def test_rag_clear_campaign_target(client, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app import rag_clear as rc
+
+    monkeypatch.setattr(rc, "_drop_collection", lambda name: True)
+
+    r = client.post("/api/rag/clear", json={"targets": ["campaign"]})
+    assert r.status_code == 200
+    assert "campaign" in r.json()["targets_cleared"]
+
+
+def test_rag_clear_manuals_and_campaign(client, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app import rag_clear as rc
+
+    monkeypatch.setattr(rc, "_drop_collection", lambda name: True)
+
+    r = client.post("/api/rag/clear", json={"targets": ["manuals", "campaign"]})
+    assert r.status_code == 200
+    cleared = set(r.json()["targets_cleared"])
+    assert cleared >= {"manuals", "campaign"}
 

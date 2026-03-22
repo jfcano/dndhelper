@@ -19,6 +19,7 @@ class Settings:
     jwt_expire_minutes: int
     admin_username: str | None
     admin_password: str | None
+    setup_master_password: str | None  # instalación vía UI; obligatoria si no hay ADMIN_* ni admin en BD
     openai_model: str
     openai_image_model: str
     world_image_generation_enabled: bool
@@ -46,6 +47,7 @@ def get_settings() -> Settings:
         jwt_expire_minutes=int(os.getenv("JWT_EXPIRE_MINUTES", "10080")),
         admin_username=os.getenv("ADMIN_USERNAME", "").strip() or None,
         admin_password=os.getenv("ADMIN_PASSWORD", "").strip() or None,
+        setup_master_password=os.getenv("SETUP_MASTER_PASSWORD", "").strip() or None,
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         openai_image_model=os.getenv("OPENAI_IMAGE_MODEL", "dall-e-3"),
         world_image_generation_enabled=os.getenv("WORLD_IMAGE_GENERATION", "true").strip().lower()

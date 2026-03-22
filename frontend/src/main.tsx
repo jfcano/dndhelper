@@ -15,8 +15,10 @@ import { ConsultasPage } from './pages/ConsultasPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
+import { SetupPage } from './pages/SetupPage'
 
 const router = createBrowserRouter([
+  { path: '/setup', element: <SetupPage /> },
   { path: '/login', element: <LoginPage /> },
   { path: '/register', element: <RegisterPage /> },
   {

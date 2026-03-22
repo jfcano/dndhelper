@@ -14,8 +14,13 @@ COPY alembic.ini .
 COPY alembic ./alembic
 COPY backend ./backend
 
+COPY backend/docker-entrypoint.sh backend/docker-entrypoint-worker.sh /usr/local/bin/
+COPY scripts/healthcheck-backend.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/docker-entrypoint-worker.sh \
+    /usr/local/bin/healthcheck-backend.sh
+
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/usr/local/bin/docker-entrypoint.sh"]

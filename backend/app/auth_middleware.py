@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 def _path_public(path: str, method: str) -> bool:
     if path == "/health":
         return True
+    if path == "/health/ready":
+        return True
     if path in ("/docs", "/openapi.json", "/redoc"):
         return True
     if path == "/" and method == "GET":
@@ -24,6 +26,10 @@ def _path_public(path: str, method: str) -> bool:
     if p == "/api/auth/register" and method == "POST":
         return True
     if p == "/api/auth/login" and method == "POST":
+        return True
+    if p == "/api/setup/status" and method == "GET":
+        return True
+    if p.rstrip("/") == "/api/setup" and method == "POST":
         return True
     return False
 

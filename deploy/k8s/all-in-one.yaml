@@ -1,0 +1,358 @@
+# Despliegue completo en un solo archivo. Antes de aplicar:
+# 1) Construye y etiqueta las imágenes (contexto raíz del repo para backend):
+#    docker build -f backend/Dockerfile -t dndhelper-backend:latest .
+#    docker build -f frontend/Dockerfile -t dndhelper-frontend:latest ./frontend
+# 2) Edita el Secret dndhelper-secrets: contraseñas y POSTGRES_URL coherentes con POSTGRES_USER/PASSWORD.
+# 3) kubectl apply -f deploy/k8s/all-in-one.yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dndhelper
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dndhelper-secrets
+  namespace: dndhelper
+type: Opaque
+stringData:
+  POSTGRES_USER: dndhelper
+  POSTGRES_PASSWORD: cambiar-en-produccion-db
+  POSTGRES_DB: dndhelper
+  # Debe coincidir con usuario, contraseña y servicio dndhelper-postgres:5432
+  POSTGRES_URL: postgresql+psycopg://dndhelper:cambiar-en-produccion-db@dndhelper-postgres:5432/dndhelper
+  JWT_SECRET: cambiar-en-produccion-jwt
+  SETUP_MASTER_PASSWORD: cambiar-en-produccion-master
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dndhelper-postgres
+  namespace: dndhelper
+  labels:
+    app: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: dndhelper
+spec:
+  serviceName: dndhelper-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: dndhelper-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dndhelper-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: dndhelper-secrets
+                  key: POSTGRES_DB
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dndhelper-app-data
+  namespace: dndhelper
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dndhelper-app-storage
+  namespace: dndhelper
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dndhelper-backend
+  namespace: dndhelper
+  labels:
+    app: dndhelper-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dndhelper-backend
+  template:
+    metadata:
+      labels:
+        app: dndhelper-backend
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until pg_isready -h dndhelper-postgres -p 5432 -U "$PGUSER" -d "$PGDATABASE"; do
+                echo "Esperando a PostgreSQL..."
+                sleep 2
+              done
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: dndhelper-secrets
+                  key: POSTGRES_USER
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: dndhelper-secrets
+                  key: POSTGRES_DB
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dndhelper-secrets
+                  key: POSTGRES_PASSWORD
+      containers:
+        - name: api
+          image: dndhelper-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dndhelper-secrets
+                  key: POSTGRES_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dndhelper-secrets
+                  key: JWT_SECRET
+            - name: SETUP_MASTER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dndhelper-secrets
+                  key: SETUP_MASTER_PASSWORD
+            - name: INGEST_WORKER_AUTOSTART
+              value: "false"
+            - name: EMBEDDINGS_DEVICE
+              value: cpu
+          volumeMounts:
+            - name: app-data
+              mountPath: /app/backend/data
+            - name: app-storage
+              mountPath: /app/backend/storage
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 40
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+        - name: ingest-worker
+          image: dndhelper-backend:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/local/bin/docker-entrypoint-worker.sh"]
+          env:
+            - name: POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dndhelper-secrets
+                  key: POSTGRES_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dndhelper-secrets
+                  key: JWT_SECRET
+            - name: SETUP_MASTER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dndhelper-secrets
+                  key: SETUP_MASTER_PASSWORD
+            - name: INGEST_WORKER_AUTOSTART
+              value: "false"
+            - name: EMBEDDINGS_DEVICE
+              value: cpu
+          volumeMounts:
+            - name: app-data
+              mountPath: /app/backend/data
+            - name: app-storage
+              mountPath: /app/backend/storage
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -m
+                - backend.scripts.health_ingest
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -m
+                - backend.scripts.health_ingest
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 10
+      volumes:
+        - name: app-data
+          persistentVolumeClaim:
+            claimName: dndhelper-app-data
+        - name: app-storage
+          persistentVolumeClaim:
+            claimName: dndhelper-app-storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dndhelper-backend
+  namespace: dndhelper
+spec:
+  selector:
+    app: dndhelper-backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dndhelper-frontend
+  namespace: dndhelper
+  labels:
+    app: dndhelper-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dndhelper-frontend
+  template:
+    metadata:
+      labels:
+        app: dndhelper-frontend
+    spec:
+      containers:
+        - name: nginx
+          image: dndhelper-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          env:
+            - name: BACKEND_UPSTREAM
+              value: dndhelper-backend:8000
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dndhelper-frontend
+  namespace: dndhelper
+spec:
+  selector:
+    app: dndhelper-frontend
+  ports:
+    - port: 80
+      targetPort: 80
+# Descomenta para exponer con Ingress (ajusta host y TLS):
+# ---
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: dndhelper
+#   namespace: dndhelper
+# spec:
+#   rules:
+#     - host: dndhelper.example.com
+#       http:
+#         paths:
+#           - path: /
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: dndhelper-frontend
+#                 port:
+#                   number: 80

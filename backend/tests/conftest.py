@@ -47,6 +47,8 @@ def _setup_test_db() -> Generator[None, None, None]:
     # El backend usa POSTGRES_URL (no POSTGRES_TEST_URL).
     # Forzamos que apunte al DB aislado de tests.
     os.environ["POSTGRES_URL"] = postgres_test_url
+    # Sin admin inicial en BD: el lifespan exige SETUP_MASTER_PASSWORD o ADMIN_*.
+    os.environ.setdefault("SETUP_MASTER_PASSWORD", "pytest_integration_setup_master")
 
     # Asegura schema actualizado.
     alembic_cfg = Config(str(project_root / "alembic.ini"))
@@ -71,6 +73,9 @@ def _setup_test_db() -> Generator[None, None, None]:
     command.upgrade(alembic_cfg, "head")
 
     yield
+
+
+from backend.tests.helpers import ensure_test_admin_exists
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -133,10 +138,35 @@ def _clean_tables() -> Generator[None, None, None]:
 def client() -> TestClient:
     from backend.app.main import app
 
+    ensure_test_admin_exists()
     c = TestClient(app)
     reg = c.post("/api/auth/register", json={"username": "pytest_user", "password": "pytest_pw_12"})
     assert reg.status_code == 200, reg.text
     token = reg.json()["access_token"]
+    c.headers.update({"Authorization": f"Bearer {token}"})
+    return c
+
+
+@pytest.fixture()
+def admin_client() -> TestClient:
+    """Cliente HTTP con JWT de usuario `is_admin=true` creado en BD (sin depender de ADMIN_* en .env)."""
+    from backend.app.auth_jwt import create_access_token
+    from backend.app.auth_password import hash_password
+    from backend.app.db import get_sessionmaker
+    from backend.app.main import app
+    from backend.app.user_repo import create_user
+
+    c = TestClient(app)
+    SessionLocal = get_sessionmaker()
+    with SessionLocal() as db:
+        u = create_user(
+            db,
+            username_normalized="pytest_admin_fixture",
+            password_hash=hash_password("pytest_admin_pw_12"),
+            is_admin=True,
+        )
+        uid = u.id
+    token = create_access_token(user_id=uid, is_admin=True)
     c.headers.update({"Authorization": f"Bearer {token}"})
     return c
 
