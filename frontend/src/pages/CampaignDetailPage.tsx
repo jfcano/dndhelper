@@ -1,266 +1,28 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { Campaign, CampaignBrief, CampaignWizardDraft, PlayerProfile, Session, World } from '../lib/api'
 import { formatError } from '../lib/errors'
 import { ConfirmCascadeDeleteDialog } from '../components/ConfirmCascadeDeleteDialog'
 import { IconButton } from '../components/IconButton'
 import {
-  IconArrowLeft,
-  IconCheck,
-  IconChevronLeft,
-  IconChevronRight,
-  IconLink,
-  IconMinus,
-  IconPlus,
-  IconRotateCcw,
-  IconSave,
-  IconSparkles,
-  IconTrash,
-  IconUsers,
-  IconX,
-} from '../components/icons'
+  CampaignBriefAssistantPanel,
+  type CampaignWizardRemovePayload,
+} from './campaign-detail/CampaignBriefAssistantPanel'
+import { CampaignHistoriaTab } from './campaign-detail/CampaignHistoriaTab'
+import { CampaignJugadoresTab } from './campaign-detail/CampaignJugadoresTab'
+import { CampaignSesionesTab } from './campaign-detail/CampaignSesionesTab'
+import type { PlayerDerived } from './campaign-detail/playerSheet'
+import {
+  createEmptyCampaignWizard,
+  wizardStorageKey,
+  wizardStepStorageKey,
+  worldIdStorageKey,
+  worldUseStorageKey,
+} from './campaign-detail/wizardStorage'
+import { IconArrowLeft, IconSave } from '../components/icons'
 import { toSpanishStatus } from '../lib/statusLabels'
 import { TabBar, TabButton } from '../components/TabBar'
-
-const CAMPAIGN_WIZARD_STORAGE_PREFIX = 'dndhelper.campaignWizard.v1'
-const CAMPAIGN_WIZARD_STEP_STORAGE_PREFIX = 'dndhelper.campaignWizard.step.v1'
-const CAMPAIGN_WIZARD_WORLD_USE_STORAGE_PREFIX = 'dndhelper.campaignWizard.worldUse.v1'
-const CAMPAIGN_WIZARD_WORLD_ID_STORAGE_PREFIX = 'dndhelper.campaignWizard.worldId.v1'
-
-function renderInlineBold(text: string): ReactNode {
-  const parts = text.split('**')
-  if (parts.length === 1) return text
-  return (
-    <>
-      {parts.map((p, i) => (i % 2 === 1 ? <strong key={i}>{p}</strong> : <span key={i}>{p}</span>))}
-    </>
-  )
-}
-
-function renderMarkdownLite(md: string): ReactNode {
-  const text = (md ?? '').replace(/\r\n/g, '\n').trimEnd()
-  if (!text.trim()) return <div style={{ opacity: 0.75 }}>(vacío)</div>
-
-  const lines = text.split('\n')
-  const blocks: Array<
-    | { kind: 'h2' | 'h3'; text: string }
-    | { kind: 'ul'; items: string[] }
-    | { kind: 'p'; text: string }
-    | { kind: 'hr' }
-  > = []
-
-  let paragraph: string[] = []
-  let listItems: string[] = []
-
-  function flushParagraph() {
-    const t = paragraph.join(' ').trim()
-    if (t) blocks.push({ kind: 'p', text: t })
-    paragraph = []
-  }
-
-  function flushList() {
-    if (listItems.length) blocks.push({ kind: 'ul', items: listItems })
-    listItems = []
-  }
-
-  for (const rawLine of lines) {
-    const line = rawLine.trimEnd()
-    const trimmed = line.trim()
-
-    if (!trimmed) {
-      flushList()
-      flushParagraph()
-      continue
-    }
-
-    if (trimmed === '---') {
-      flushList()
-      flushParagraph()
-      blocks.push({ kind: 'hr' })
-      continue
-    }
-
-    if (trimmed.startsWith('### ')) {
-      flushList()
-      flushParagraph()
-      blocks.push({ kind: 'h3', text: trimmed.slice(4).trim() })
-      continue
-    }
-
-    if (trimmed.startsWith('## ')) {
-      flushList()
-      flushParagraph()
-      blocks.push({ kind: 'h2', text: trimmed.slice(3).trim() })
-      continue
-    }
-
-    if (trimmed.startsWith('- ')) {
-      flushParagraph()
-      listItems.push(trimmed.slice(2).trim())
-      continue
-    }
-
-    flushList()
-    paragraph.push(trimmed)
-  }
-
-  flushList()
-  flushParagraph()
-
-  return (
-    <div style={{ display: 'grid', gap: 14, lineHeight: 1.65, textAlign: 'justify' }}>
-      {blocks.map((b, idx) => {
-        if (b.kind === 'hr') return <hr key={`hr-${idx}`} style={{ borderColor: 'var(--border-subtle)' }} />
-        if (b.kind === 'h2')
-          return (
-            <h2 key={`h2-${idx}`} style={{ margin: '4px 0 0', fontSize: 18, textAlign: 'left' }}>
-              {renderInlineBold(b.text)}
-            </h2>
-          )
-        if (b.kind === 'h3')
-          return (
-            <h3 key={`h3-${idx}`} style={{ margin: '4px 0 0', fontSize: 15, opacity: 0.95, textAlign: 'left' }}>
-              {renderInlineBold(b.text)}
-            </h3>
-          )
-        if (b.kind === 'ul')
-          return (
-            <div key={`ul-${idx}`} style={{ display: 'grid', gap: 8 }}>
-              {b.items.map((it, j) => (
-                <div
-                  key={`li-${idx}-${j}`}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '14px 1fr',
-                    gap: 10,
-                    alignItems: 'start',
-                    paddingLeft: 2,
-                    textAlign: 'left',
-                  }}
-                >
-                  <div style={{ opacity: 0.7, lineHeight: 1.65 }}>•</div>
-                  <div style={{ opacity: 0.95 }}>{renderInlineBold(it)}</div>
-                </div>
-              ))}
-            </div>
-          )
-        return (
-          <p key={`p-${idx}`} style={{ margin: '2px 0', opacity: 0.95 }}>
-            {renderInlineBold(b.text)}
-          </p>
-        )
-      })}
-    </div>
-  )
-}
-
-type PlayerDerived = {
-  id: string
-  name: string
-  summary: string
-  basicSheet: unknown
-}
-
-function formatSheetLabel(rawKey: string): string {
-  return rawKey
-    .replace(/_/g, ' ')
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .trim()
-    .replace(/^\w/, (c) => c.toUpperCase())
-}
-
-function formatSheetScalar(value: unknown): string {
-  if (value == null) return '(vacío)'
-  if (typeof value === 'boolean') return value ? 'Sí' : 'No'
-  return String(value)
-}
-
-function renderStructuredSheet(value: unknown, level = 0): ReactNode {
-  if (value == null) return <span style={{ opacity: 0.75 }}>(vacío)</span>
-
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return <span>{String(value)}</span>
-  }
-
-  if (Array.isArray(value)) {
-    if (!value.length) return <span style={{ opacity: 0.75 }}>(sin elementos)</span>
-    return (
-      <ul style={{ margin: 0, paddingLeft: level === 0 ? 18 : 16, display: 'grid', gap: 4 }}>
-        {value.map((item, idx) => (
-          <li key={`sheet-list-${level}-${idx}`}>{renderStructuredSheet(item, level + 1)}</li>
-        ))}
-      </ul>
-    )
-  }
-
-  if (typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-    if (!entries.length) return <span style={{ opacity: 0.75 }}>(sin contenido)</span>
-    const scalarEntries = entries.filter(([, v]) => v == null || ['string', 'number', 'boolean'].includes(typeof v))
-    const complexEntries = entries.filter(([, v]) => !(v == null || ['string', 'number', 'boolean'].includes(typeof v)))
-
-    return (
-      <div style={{ display: 'grid', gap: 8, textAlign: 'left' }}>
-        {scalarEntries.length > 0 && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'minmax(140px, 220px) 1fr',
-              gap: 8,
-              alignItems: 'start',
-            }}
-          >
-            {scalarEntries.map(([k, v]) => (
-              <div key={`sheet-scalar-row-${level}-${k}`} style={{ display: 'contents' }}>
-                <div style={{ opacity: 0.85, fontWeight: 650 }}>
-                  {formatSheetLabel(k)}
-                </div>
-                <div>{formatSheetScalar(v)}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {complexEntries.map(([k, v]) => (
-          <div key={`sheet-key-${level}-${k}`} style={{ marginLeft: level > 0 ? 8 : 0 }}>
-            <div style={{ fontWeight: 700, marginTop: scalarEntries.length > 0 ? 2 : 0 }}>{formatSheetLabel(k)}</div>
-            <div style={{ marginLeft: 10, marginTop: 4 }}>{renderStructuredSheet(v, level + 1)}</div>
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  return <span>{String(value)}</span>
-}
-
-function createEmptyCampaignWizard(): CampaignWizardDraft {
-  return {
-    kind: '',
-    tone: null,
-    themes: [''],
-    starting_level: 1,
-    inspirations: [''],
-    constraints: null,
-  }
-}
-
-function wizardStorageKey(campaignId: string): string {
-  return `${CAMPAIGN_WIZARD_STORAGE_PREFIX}.${campaignId}`
-}
-
-function wizardStepStorageKey(campaignId: string): string {
-  return `${CAMPAIGN_WIZARD_STEP_STORAGE_PREFIX}.${campaignId}`
-}
-
-function worldUseStorageKey(campaignId: string): string {
-  return `${CAMPAIGN_WIZARD_WORLD_USE_STORAGE_PREFIX}.${campaignId}`
-}
-
-function worldIdStorageKey(campaignId: string): string {
-  return `${CAMPAIGN_WIZARD_WORLD_ID_STORAGE_PREFIX}.${campaignId}`
-}
 
 export function CampaignDetailPage() {
   const { id } = useParams()
@@ -306,11 +68,9 @@ export function CampaignDetailPage() {
   const [sessionDeletePending, setSessionDeletePending] = useState<Session | null>(null)
   const [playerDeletePending, setPlayerDeletePending] = useState<{ id: string; name: string } | null>(null)
   const [playerDeleteBusy, setPlayerDeleteBusy] = useState(false)
-  const [campaignWizardRemovePending, setCampaignWizardRemovePending] = useState<{
-    kind: 'theme' | 'inspiration'
-    index: number
-    label: string
-  } | null>(null)
+  const [campaignWizardRemovePending, setCampaignWizardRemovePending] = useState<CampaignWizardRemovePayload | null>(
+    null,
+  )
   const [sessionApproving, setSessionApproving] = useState(false)
   const [sessionReopening, setSessionReopening] = useState(false)
 
@@ -850,9 +610,6 @@ export function CampaignDetailPage() {
   const canGoPrev = currentVisibleIndex > 0
   const canGoNext = currentVisibleIndex >= 0 && currentVisibleIndex < visibleSteps.length - 1
 
-  const storyPreviewRendered = useMemo(() => renderMarkdownLite(storyEditorText), [storyEditorText])
-  const storyFinalRendered = useMemo(() => renderMarkdownLite(campaign?.story_final ?? ''), [campaign?.story_final])
-
   /** No hacer trim() en cada tecla: si no, al escribir un espacio entre palabras desaparece (trim quita el trailing space). */
   function setConstraintNotes(notes: string) {
     setWizard((w) => {
@@ -1229,300 +986,34 @@ export function CampaignDetailPage() {
           </div>
 
           {campaign.brief_status !== 'approved' && !campaign.story_draft && (
-            <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <h3 style={{ margin: 0, fontSize: 24, textAlign: 'left' }}>Asistente de resumen inicial</h3>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <small style={{ opacity: 0.8 }}>Paso {stepPos} de {visibleSteps.length}</small>
-              </div>
-            </div>
-
-            {step === 0 && (
-              <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <div style={{ opacity: 0.8, fontSize: 13 }}>Mundo para la campaña</div>
-                  <div style={{ opacity: 0.65, fontSize: 12 }}>
-                    Solo aparecen mundos <strong>aprobados</strong> (el resto sigue en Mundos hasta aprobar el
-                    contenido).
-                  </div>
-                  {!worlds && <div>Cargando mundos…</div>}
-                  {worlds && (
-                    <>
-                      <select value={worldId} onChange={(e) => setWorldId(e.target.value)} style={{ minWidth: 320 }}>
-                        <option value="">(selecciona un mundo)</option>
-                        {worldOptions.map((w) => (
-                          <option value={w.id} key={w.id}>
-                            {w.name} ({toSpanishStatus(w.status)})
-                          </option>
-                        ))}
-                      </select>
-                      {worldOptions.length === 0 ? (
-                        <div style={{ opacity: 0.85, fontSize: 13 }}>
-                          No hay mundos aprobados. Crea uno en <Link to="/worlds">Mundos</Link>, rellena el contenido y
-                          pulsa aprobar.
-                        </div>
-                      ) : null}
-                      <IconButton
-                        label="Vincular mundo a la campaña"
-                        textShort="Vincular"
-                        busy={saving}
-                        busyLabel="Vinculando mundo…"
-                        busyShort="…"
-                        disabled={!worldId || campaign?.world_id === worldId}
-                        className="btn-icon--inline"
-                        onClick={() => void onLinkWorld()}
-                      >
-                        <IconLink />
-                      </IconButton>
-                      {campaign.world_id && <Link to={`/worlds/${campaign.world_id}`}>Abrir mundo vinculado</Link>}
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {useExistingWorld !== true && step === 1 && (
-              <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ opacity: 0.8, fontSize: 13 }}>Tipo y tono de campaña</div>
-                  <IconButton
-                    label="Autogenerar tipo y tono con IA"
-                    textShort="IA"
-                    busy={autogeneratingStep === 0}
-                    busyLabel="Autogenerando…"
-                    busyShort="…"
-                    disabled={autogeneratingStep !== null || saving}
-                    className="btn-icon--inline"
-                    onClick={() => void onAutogenerateStep(0)}
-                  >
-                    <IconSparkles />
-                  </IconButton>
-                </div>
-                <input
-                  value={wizard.kind}
-                  onChange={(e) => setWizard((w) => ({ ...w, kind: e.target.value }))}
-                  placeholder="sandbox / investigación / épica…"
-                />
-                <input
-                  value={wizard.tone ?? ''}
-                  onChange={(e) => setWizard((w) => ({ ...w, tone: e.target.value || null }))}
-                  placeholder="heroico, oscuro, pulp…"
-                />
-              </div>
-            )}
-
-            {step === 2 && (
-              <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ opacity: 0.8, fontSize: 13 }}>Temas principales</div>
-                  <IconButton
-                    label="Autogenerar temas con IA"
-                    textShort="IA"
-                    busy={autogeneratingStep === 1}
-                    busyLabel="Autogenerando…"
-                    busyShort="…"
-                    disabled={autogeneratingStep !== null || saving}
-                    className="btn-icon--inline"
-                    onClick={() => void onAutogenerateStep(1)}
-                  >
-                    <IconSparkles />
-                  </IconButton>
-                </div>
-                {wizard.themes.map((t, i) => (
-                  <div key={`theme-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
-                    <input
-                      value={t}
-                      onChange={(e) =>
-                        setWizard((w) => {
-                          const next = [...w.themes]
-                          next[i] = e.target.value
-                          return { ...w, themes: next }
-                        })
-                      }
-                      placeholder="intriga política, exploración, horror…"
-                    />
-                    <IconButton
-                      label="Quitar tema"
-                      textShort="Quitar"
-                      className="btn-icon--inline"
-                      disabled={wizard.themes.length <= 1}
-                      onClick={() =>
-                        setCampaignWizardRemovePending({
-                          kind: 'theme',
-                          index: i,
-                          label: t.trim() || `Tema ${i + 1}`,
-                        })
-                      }
-                    >
-                      <IconMinus />
-                    </IconButton>
-                  </div>
-                ))}
-                <div>
-                  <IconButton
-                    label="Añadir tema"
-                    textShort="Añadir"
-                    className="btn-icon--inline"
-                    onClick={() => setWizard((w) => ({ ...w, themes: [...w.themes, ''] }))}
-                  >
-                    <IconPlus />
-                  </IconButton>
-                </div>
-              </div>
-            )}
-
-            {step === 3 && (
-              <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ opacity: 0.8, fontSize: 13 }}>Nivel inicial y restricciones</div>
-                  <IconButton
-                    label="Autogenerar nivel y restricciones con IA"
-                    textShort="IA"
-                    busy={autogeneratingStep === 2}
-                    busyLabel="Autogenerando…"
-                    busyShort="…"
-                    disabled={autogeneratingStep !== null || saving}
-                    className="btn-icon--inline"
-                    onClick={() => void onAutogenerateStep(2)}
-                  >
-                    <IconSparkles />
-                  </IconButton>
-                </div>
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <span style={{ opacity: 0.75, fontSize: 12 }}>Nivel inicial</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={20}
-                    value={wizard.starting_level ?? 1}
-                    onChange={(e) => setWizard((w) => ({ ...w, starting_level: Number(e.target.value || 1) }))}
-                  />
-                </label>
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <span style={{ opacity: 0.75, fontSize: 12 }}>Restricciones / notas</span>
-                  <textarea
-                    rows={4}
-                    value={getConstraintNotes()}
-                    onChange={(e) => setConstraintNotes(e.target.value)}
-                    placeholder="Límites de tono, estilo de juego, contenido a evitar, etc."
-                  />
-                </label>
-              </div>
-            )}
-
-            {useExistingWorld !== true && step === 4 && (
-              <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ opacity: 0.8, fontSize: 13 }}>Inspiraciones</div>
-                  <IconButton
-                    label="Autogenerar inspiraciones con IA"
-                    textShort="IA"
-                    busy={autogeneratingStep === 3}
-                    busyLabel="Autogenerando…"
-                    busyShort="…"
-                    disabled={autogeneratingStep !== null || saving}
-                    className="btn-icon--inline"
-                    onClick={() => void onAutogenerateStep(3)}
-                  >
-                    <IconSparkles />
-                  </IconButton>
-                </div>
-                {wizard.inspirations.map((t, i) => (
-                  <div key={`insp-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
-                    <input
-                      value={t}
-                      onChange={(e) =>
-                        setWizard((w) => {
-                          const next = [...w.inspirations]
-                          next[i] = e.target.value
-                          return { ...w, inspirations: next }
-                        })
-                      }
-                      placeholder="The Witcher, Eberron, Zelda…"
-                    />
-                    <IconButton
-                      label="Quitar inspiración"
-                      textShort="Quitar"
-                      className="btn-icon--inline"
-                      disabled={wizard.inspirations.length <= 1}
-                      onClick={() =>
-                        setCampaignWizardRemovePending({
-                          kind: 'inspiration',
-                          index: i,
-                          label: t.trim() || `Inspiración ${i + 1}`,
-                        })
-                      }
-                    >
-                      <IconMinus />
-                    </IconButton>
-                  </div>
-                ))}
-                <div>
-                  <IconButton
-                    label="Añadir inspiración"
-                    textShort="Añadir"
-                    className="btn-icon--inline"
-                    onClick={() => setWizard((w) => ({ ...w, inspirations: [...w.inspirations, ''] }))}
-                  >
-                    <IconPlus />
-                  </IconButton>
-                </div>
-              </div>
-            )}
-
-            <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <IconButton
-                  label="Paso anterior del asistente"
-                  textShort="Atrás"
-                  disabled={!canGoPrev || saving}
-                  className="btn-icon--inline"
-                  onClick={() => setStep(visibleSteps[Math.max(0, currentVisibleIndex - 1)] ?? firstVisibleStep)}
-                >
-                  <IconChevronLeft />
-                </IconButton>
-                <IconButton
-                  label="Reiniciar asistente de campaña"
-                  textShort="Reiniciar"
-                  disabled={saving}
-                  className="btn-icon--inline"
-                  onClick={() => void onResetWizard()}
-                >
-                  <IconRotateCcw />
-                </IconButton>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {canGoNext ? (
-                  <IconButton
-                    label="Siguiente paso del asistente"
-                    textShort="Siguiente"
-                    disabled={!canContinueFromCurrentStep() || saving}
-                    className="btn-icon--inline"
-                    onClick={() => setStep(visibleSteps[currentVisibleIndex + 1])}
-                  >
-                    <IconChevronRight />
-                  </IconButton>
-                ) : (
-                  <IconButton
-                    label="Guardar borrador del brief"
-                    textShort="Guardar"
-                    busy={saving}
-                    busyLabel="Guardando brief…"
-                    busyShort="…"
-                    disabled={!canContinueFromCurrentStep()}
-                    className="btn-icon--inline"
-                    onClick={() => void onSaveBriefDraft()}
-                  >
-                    <IconSave />
-                  </IconButton>
-                )}
-              </div>
-            </div>
-
-            <div style={{ marginTop: 10, opacity: 0.8 }}>
-              Estado: {toSpanishStatus(campaign.brief_status)}
-            </div>
-            </div>
+            <CampaignBriefAssistantPanel
+              campaign={campaign}
+              worlds={worlds}
+              worldOptions={worldOptions}
+              worldId={worldId}
+              setWorldId={setWorldId}
+              useExistingWorld={useExistingWorld}
+              wizard={wizard}
+              setWizard={setWizard}
+              step={step}
+              setStep={setStep}
+              visibleSteps={visibleSteps}
+              stepPos={stepPos}
+              canGoPrev={canGoPrev}
+              canGoNext={canGoNext}
+              firstVisibleStep={firstVisibleStep}
+              currentVisibleIndex={currentVisibleIndex}
+              autogeneratingStep={autogeneratingStep}
+              saving={saving}
+              canContinueFromCurrentStep={canContinueFromCurrentStep}
+              getConstraintNotes={getConstraintNotes}
+              setConstraintNotes={setConstraintNotes}
+              onLinkWorld={onLinkWorld}
+              onAutogenerateStep={onAutogenerateStep}
+              onSaveBriefDraft={onSaveBriefDraft}
+              onResetWizard={onResetWizard}
+              setCampaignWizardRemovePending={setCampaignWizardRemovePending}
+            />
           )}
 
           {(campaign.brief_status === 'approved' || !!campaign.story_draft) && (
@@ -1540,658 +1031,83 @@ export function CampaignDetailPage() {
               </TabBar>
 
               {detailTab === 'historia' && (
-                <>
-              {campaign.brief_status !== 'approved' ? (
-                <>
-                  {campaign.story_draft && (
-                    <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, marginTop: 4 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                        <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>Borrador del resumen de historia</h3>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <IconButton
-                            label="Guardar borrador del resumen de historia"
-                            textShort="Guardar"
-                            busy={storySaving}
-                            busyLabel="Guardando borrador…"
-                            busyShort="…"
-                            disabled={saving || !campaign.world_id || campaign.world_id !== worldId}
-                            className="btn-icon--inline"
-                            onClick={() => void onSaveStoryDraft()}
-                          >
-                            <IconSave />
-                          </IconButton>
-                          <IconButton
-                            label="Aprobar resumen de historia"
-                            textShort="Aprobar"
-                            busy={saving}
-                            busyLabel="Aprobando…"
-                            busyShort="…"
-                            disabled={
-                              storySaving ||
-                              !campaign.world_id ||
-                              campaign.world_id !== worldId ||
-                              !storyEditorText.trim().length
-                            }
-                            className="btn-icon--inline"
-                            onClick={() => void onApproveBrief()}
-                          >
-                            <IconCheck />
-                          </IconButton>
-                          <IconButton
-                            label="Reiniciar asistente de campaña"
-                            textShort="Reiniciar"
-                            disabled={saving || storySaving}
-                            className="btn-icon--inline"
-                            onClick={() => void onResetWizard()}
-                          >
-                            <IconRotateCcw />
-                          </IconButton>
-                        </div>
-                      </div>
-
-                      <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
-                        <div style={{ opacity: 0.8, fontSize: 13 }}>Vista previa (solo lectura)</div>
-                        <div>{storyPreviewRendered}</div>
-                        <textarea
-                          rows={12}
-                          value={storyEditorText}
-                          onChange={(e) => setStoryEditorText(e.target.value)}
-                          style={{ width: '100%' }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, marginTop: 4 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                    <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>Resumen final de historia</h3>
-                    <IconButton
-                      label="Volver la historia a borrador"
-                      textShort="Borrador"
-                      busy={reopening}
-                      busyLabel="Reabriendo…"
-                      busyShort="…"
-                      className="btn-icon--inline"
-                      onClick={() => void onReopenCampaign()}
-                    >
-                      <IconRotateCcw />
-                    </IconButton>
-                  </div>
-                  <div style={{ marginTop: 10 }}>{storyFinalRendered}</div>
-                </div>
-
-                <div
-                  style={{
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: 12,
-                    padding: 12,
-                    marginTop: 16,
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                    <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>Outline de campaña</h3>
-                    <div style={{ fontSize: 13, opacity: 0.85 }}>{toSpanishStatus(campaign.outline_status)}</div>
-                  </div>
-                  <p style={{ margin: '10px 0 0', opacity: 0.85, fontSize: 13, lineHeight: 1.5 }}>
-                    El outline estructura el arco narrativo. Es obligatorio <strong>generarlo</strong> (o pegar JSON
-                    válido), <strong>guardarlo</strong> y <strong>aprobarlo</strong> antes de poder crear sesiones. La
-                    API exige un <strong>mundo vinculado aprobado</strong> con <strong>contenido final</strong> para
-                    generarlo con IA.
-                  </p>
-                  {!campaign.world_id ? (
-                    <div style={{ marginTop: 10, opacity: 0.85, fontSize: 13 }}>
-                      Vincula un mundo a esta campaña para poder generar el outline.
-                    </div>
-                  ) : !worldReadyForOutline ? (
-                    <div style={{ marginTop: 10, opacity: 0.85, fontSize: 13 }}>
-                      El mundo «{linkedWorld?.name ?? campaign.world_id}» debe estar{' '}
-                      <strong>aprobado</strong> y tener <strong>contenido final</strong>. Ábrelo en Mundos y aprueba
-                      el texto antes de generar el outline.
-                    </div>
-                  ) : null}
-
-                  {campaign.outline_status !== 'approved' ? (
-                    <>
-                      <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                        <IconButton
-                          label="Generar outline con IA"
-                          textShort="Generar"
-                          busy={outlineGenerating}
-                          busyLabel="Generando outline…"
-                          busyShort="…"
-                          disabled={
-                            saving ||
-                            outlineSaving ||
-                            outlineApproving ||
-                            !worldReadyForOutline ||
-                            campaign.outline_status === 'approved'
-                          }
-                          className="btn-icon--inline"
-                          onClick={() => void onGenerateOutline()}
-                        >
-                          <IconSparkles />
-                        </IconButton>
-                        <IconButton
-                          label="Guardar borrador del outline (JSON)"
-                          textShort="Guardar"
-                          busy={outlineSaving}
-                          busyLabel="Guardando…"
-                          busyShort="…"
-                          disabled={
-                            saving ||
-                            outlineGenerating ||
-                            outlineApproving ||
-                            !outlineEditorText.trim()
-                          }
-                          className="btn-icon--inline"
-                          onClick={() => void onSaveOutlineDraft()}
-                        >
-                          <IconSave />
-                        </IconButton>
-                        <IconButton
-                          label="Aprobar outline"
-                          textShort="Aprobar"
-                          busy={outlineApproving}
-                          busyLabel="Aprobando…"
-                          busyShort="…"
-                          disabled={
-                            saving ||
-                            outlineGenerating ||
-                            outlineSaving ||
-                            !campaign.outline_draft?.trim()
-                          }
-                          className="btn-icon--inline"
-                          onClick={() => void onApproveOutline()}
-                        >
-                          <IconCheck />
-                        </IconButton>
-                      </div>
-                      <label style={{ display: 'grid', gap: 8, marginTop: 12 }}>
-                        <span style={{ opacity: 0.75, fontSize: 12 }}>Borrador (JSON editable)</span>
-                        <textarea
-                          rows={14}
-                          value={outlineEditorText}
-                          onChange={(e) => {
-                            setOutlineEditorText(e.target.value)
-                            setOutlineDirty(true)
-                          }}
-                          spellCheck={false}
-                          style={{
-                            width: '100%',
-                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                            fontSize: 12,
-                            padding: 10,
-                            borderRadius: 10,
-                            border: '1px solid var(--border-subtle)',
-                            background: 'rgba(0,0,0,0.25)',
-                            color: 'inherit',
-                          }}
-                          disabled={outlineGenerating || outlineSaving || outlineApproving}
-                        />
-                      </label>
-                    </>
-                  ) : (
-                    <pre
-                      style={{
-                        marginTop: 12,
-                        padding: 12,
-                        borderRadius: 10,
-                        border: '1px solid var(--border-subtle)',
-                        background: 'rgba(0,0,0,0.2)',
-                        fontSize: 12,
-                        overflow: 'auto',
-                        maxHeight: 360,
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                      }}
-                    >
-                      {outlineEditorText || '(vacío)'}
-                    </pre>
-                  )}
-                </div>
-                </>
-              )}
-                </>
+                <CampaignHistoriaTab
+                  campaign={campaign}
+                  linkedWorld={linkedWorld}
+                  worldReadyForOutline={worldReadyForOutline}
+                  worldId={worldId}
+                  storyEditorText={storyEditorText}
+                  setStoryEditorText={setStoryEditorText}
+                  storySaving={storySaving}
+                  saving={saving}
+                  reopening={reopening}
+                  outlineEditorText={outlineEditorText}
+                  setOutlineEditorText={setOutlineEditorText}
+                  setOutlineDirty={setOutlineDirty}
+                  outlineGenerating={outlineGenerating}
+                  outlineSaving={outlineSaving}
+                  outlineApproving={outlineApproving}
+                  onSaveStoryDraft={onSaveStoryDraft}
+                  onApproveBrief={onApproveBrief}
+                  onResetWizard={onResetWizard}
+                  onReopenCampaign={onReopenCampaign}
+                  onGenerateOutline={onGenerateOutline}
+                  onSaveOutlineDraft={onSaveOutlineDraft}
+                  onApproveOutline={onApproveOutline}
+                />
               )}
 
               {detailTab === 'sesiones' && (
-                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, marginTop: 4 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                <h3 style={{ marginTop: 0, fontSize: 24, textAlign: 'left' }}>Sesiones vinculadas</h3>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <IconButton
-                    label="Crear sesiones y generar con IA"
-                    textShort="Sesiones"
-                    busy={createSessionsLoading}
-                    busyLabel="Generando sesiones…"
-                    busyShort="…"
-                    disabled={
-                      sessionsLoading ||
-                      campaign.brief_status !== 'approved' ||
-                      (campaign.outline_status || '').toLowerCase() !== 'approved'
-                    }
-                    className="btn-icon--inline"
-                    onClick={() => {
-                      setCreateSessionsError(null)
-                      setCreateSessionsOpen(true)
-                    }}
-                  >
-                    <IconSparkles />
-                  </IconButton>
-                </div>
-              </div>
-              {sessionsError && (
-                <div style={{ color: 'var(--danger)', whiteSpace: 'pre-wrap' }}>{sessionsError}</div>
-              )}
-              {createSessionsError && <div style={{ color: 'var(--danger)', marginTop: 8 }}>{createSessionsError}</div>}
-              {campaign.brief_status === 'approved' &&
-                (campaign.outline_status || '').toLowerCase() !== 'approved' && (
-                  <div style={{ marginTop: 8, opacity: 0.8, fontSize: 13 }}>
-                    Genera y aprueba el <strong>outline</strong> en la pestaña Historia antes de crear sesiones.
-                  </div>
-                )}
-              {!sessions && !sessionsError && sessionsLoading && <div>Cargando…</div>}
-              {sessions && sessions.length === 0 && <div>No hay sesiones para esta campaña.</div>}
-
-              {createSessionsOpen && (
-                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, marginTop: 12 }}>
-                  <h4 style={{ margin: '0 0 8px 0' }}>Crear sesiones</h4>
-                  <p style={{ margin: 0, opacity: 0.85, fontSize: 13 }}>
-                    Se generan título y resumen por sesión. Luego puedes editar el resumen y redactar el guion (borrador) a mano en el detalle de cada sesión.
-                  </p>
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <span style={{ opacity: 0.75, fontSize: 12 }}>¿Cuántas sesiones crear? (1-20)</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={20}
-                        value={createSessionsCount}
-                        onChange={(e) => setCreateSessionsCount(Number(e.target.value))}
-                        style={{
-                          padding: 8,
-                          borderRadius: 10,
-                          border: '1px solid var(--border-subtle)',
-                          background: 'rgba(0,0,0,0.25)',
-                          color: 'inherit',
-                          width: 140,
-                        }}
-                        disabled={createSessionsLoading}
-                      />
-                    </label>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <IconButton
-                        label="Cerrar sin crear sesiones"
-                        textShort="Cerrar"
-                        disabled={createSessionsLoading}
-                        className="btn-icon--inline"
-                        onClick={() => setCreateSessionsOpen(false)}
-                      >
-                        <IconX />
-                      </IconButton>
-                      <IconButton
-                        label="Crear sesiones y generar con IA"
-                        textShort="Crear"
-                        busy={createSessionsLoading}
-                        busyLabel="Creando sesiones…"
-                        busyShort="…"
-                        className="btn-icon--inline"
-                        onClick={() => void onCreateAndGenerateSessions()}
-                      >
-                        <IconSparkles />
-                      </IconButton>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {sessions && sessions.length > 0 && (
-                <div style={{ display: 'grid', gap: 12 }}>
-                  <div style={{ overflow: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead style={{ background: 'var(--table-header-bg)' }}>
-                        <tr>
-                          <th style={{ textAlign: 'left', padding: 10 }}>Orden</th>
-                          <th style={{ textAlign: 'left', padding: 10 }}>Nombre</th>
-                          <th style={{ textAlign: 'left', padding: 10 }}>Aprobación</th>
-                          <th style={{ textAlign: 'left', padding: 10 }}>Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sessions.map((s) => (
-                          <tr
-                            key={s.id}
-                            onClick={() => setSelectedSessionId(s.id)}
-                            style={{
-                              borderTop: '1px solid var(--table-row-border)',
-                              background: selectedSessionId === s.id ? 'var(--table-row-selected)' : undefined,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            <td style={{ padding: 10 }}>{s.session_number}</td>
-                            <td style={{ padding: 10 }}>{s.title}</td>
-                            <td style={{ padding: 10 }}>{toSpanishStatus(s.approval_status)}</td>
-                            <td style={{ padding: 10 }}>
-                              <IconButton
-                                label={`Borrar sesión ${s.session_number}`}
-                                textShort="Borrar"
-                                busy={sessionDeleteLoadingId === s.id}
-                                busyLabel="Borrando…"
-                                busyShort="…"
-                                disabled={createSessionsLoading}
-                                className="btn-icon--inline"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setSessionDeletePending(s)
-                                }}
-                              >
-                                <IconTrash />
-                              </IconButton>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {selectedSession ? (
-                    <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                        <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>
-                          Sesión {selectedSession.session_number}: {selectedSession.title}
-                        </h3>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                          {selectedSession.approval_status !== 'approved' ? (
-                            <IconButton
-                              label="Aprobar sesión"
-                              textShort="Aprobar"
-                              busy={sessionApproving}
-                              busyLabel="Aprobando…"
-                              busyShort="…"
-                              disabled={sessionReopening || sessionSummarySaving || sessionDraftSaving}
-                              className="btn-icon--inline"
-                              onClick={() => void onApproveSession()}
-                            >
-                              <IconCheck />
-                            </IconButton>
-                          ) : (
-                            <IconButton
-                              label="Volver sesión a borrador"
-                              textShort="Borrador"
-                              busy={sessionReopening}
-                              busyLabel="Reabriendo…"
-                              busyShort="…"
-                              disabled={sessionApproving || sessionSummarySaving || sessionDraftSaving}
-                              className="btn-icon--inline"
-                              onClick={() => void onReopenSession()}
-                            >
-                              <IconRotateCcw />
-                            </IconButton>
-                          )}
-                          <IconButton
-                            label="Cerrar detalle de sesión"
-                            textShort="Cerrar"
-                            disabled={!selectedSessionId}
-                            className="btn-icon--inline"
-                            onClick={() => setSelectedSessionId(null)}
-                          >
-                            <IconX />
-                          </IconButton>
-                        </div>
-                      </div>
-                      <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
-                        <div>
-                          <div style={{ opacity: 0.75, fontSize: 12 }}>Aprobación</div>
-                          <div>{toSpanishStatus(selectedSession.approval_status)}</div>
-                        </div>
-                        <div>
-                          <div style={{ opacity: 0.75, fontSize: 12 }}>Resumen</div>
-                          {selectedSession.approval_status === 'approved' ? (
-                            <div>
-                              {selectedSession.summary ? (
-                                renderMarkdownLite(selectedSession.summary)
-                              ) : (
-                                <span style={{ opacity: 0.75 }}>(vacío)</span>
-                              )}
-                            </div>
-                          ) : (
-                            <>
-                              <div style={{ opacity: 0.8, fontSize: 12, marginBottom: 6 }}>
-                                Planificación de la sesión (Markdown). Pulsa «Guardar resumen» para persistirlo.
-                              </div>
-                              <textarea
-                                rows={8}
-                                value={sessionSummaryEditor}
-                                onChange={(e) => setSessionSummaryEditor(e.target.value)}
-                                style={{
-                                  width: '100%',
-                                  marginTop: 4,
-                                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                                  fontSize: 13,
-                                }}
-                                disabled={sessionSummarySaving}
-                                placeholder="Resumen de la sesión en Markdown…"
-                              />
-                              <div style={{ marginTop: 8 }}>
-                                <IconButton
-                                  label="Guardar resumen de sesión"
-                                  textShort="Guardar"
-                                  busy={sessionSummarySaving}
-                                  busyLabel="Guardando resumen…"
-                                  busyShort="…"
-                                  className="btn-icon--inline"
-                                  onClick={() => void onSaveSessionSummary()}
-                                >
-                                  <IconSave />
-                                </IconButton>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                        <div>
-                          <div style={{ opacity: 0.75, fontSize: 12 }}>
-                            {selectedSession.approval_status === 'approved' ? 'Contenido aprobado' : 'Contenido (borrador)'}
-                          </div>
-                          <div style={{ opacity: 0.8, fontSize: 12, marginBottom: 6 }}>
-                            {selectedSession.approval_status === 'approved'
-                              ? 'Solo lectura.'
-                              : !(selectedSession.content_draft ?? '').trim()
-                                ? 'Escribe el guion de la sesión aquí (Markdown) y guarda. Puedes apoyarte en el resumen de arriba.'
-                                : 'Texto editable (como el resumen de campaña).'}
-                          </div>
-                          <div>{renderMarkdownLite(sessionDraftEditor)}</div>
-                          {selectedSession.approval_status !== 'approved' ? (
-                            <>
-                              <textarea
-                                rows={12}
-                                value={sessionDraftEditor}
-                                onChange={(e) => setSessionDraftEditor(e.target.value)}
-                                style={{ width: '100%', marginTop: 8 }}
-                                disabled={sessionDraftSaving}
-                              />
-                              <div style={{ marginTop: 8 }}>
-                                <IconButton
-                                  label="Guardar borrador del guion de sesión"
-                                  textShort="Guardar"
-                                  busy={sessionDraftSaving}
-                                  busyLabel="Guardando guion…"
-                                  busyShort="…"
-                                  className="btn-icon--inline"
-                                  onClick={() => void onSaveSessionDraft()}
-                                >
-                                  <IconSave />
-                                </IconButton>
-                              </div>
-                            </>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ opacity: 0.8 }}>(Selecciona una sesión para ver el detalle)</div>
-                  )}
-                </div>
-              )}
-                </div>
+                <CampaignSesionesTab
+                  campaign={campaign}
+                  sessions={sessions}
+                  sessionsLoading={sessionsLoading}
+                  sessionsError={sessionsError}
+                  createSessionsOpen={createSessionsOpen}
+                  setCreateSessionsOpen={setCreateSessionsOpen}
+                  createSessionsCount={createSessionsCount}
+                  setCreateSessionsCount={setCreateSessionsCount}
+                  createSessionsLoading={createSessionsLoading}
+                  createSessionsError={createSessionsError}
+                  setCreateSessionsError={setCreateSessionsError}
+                  selectedSessionId={selectedSessionId}
+                  setSelectedSessionId={setSelectedSessionId}
+                  selectedSession={selectedSession}
+                  sessionSummaryEditor={sessionSummaryEditor}
+                  setSessionSummaryEditor={setSessionSummaryEditor}
+                  sessionDraftEditor={sessionDraftEditor}
+                  setSessionDraftEditor={setSessionDraftEditor}
+                  sessionSummarySaving={sessionSummarySaving}
+                  sessionDraftSaving={sessionDraftSaving}
+                  sessionDeleteLoadingId={sessionDeleteLoadingId}
+                  sessionApproving={sessionApproving}
+                  sessionReopening={sessionReopening}
+                  onCreateAndGenerateSessions={onCreateAndGenerateSessions}
+                  onApproveSession={onApproveSession}
+                  onReopenSession={onReopenSession}
+                  onSaveSessionSummary={onSaveSessionSummary}
+                  onSaveSessionDraft={onSaveSessionDraft}
+                  setSessionDeletePending={setSessionDeletePending}
+                />
               )}
 
               {detailTab === 'jugadores' && (
-                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, marginTop: 4 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                <h3 style={{ marginTop: 0, fontSize: 24, textAlign: 'left' }}>Personajes jugadores</h3>
-                <IconButton
-                  label="Crear personajes jugadores con IA"
-                  textShort="Jugadores"
-                  busy={playersLoading}
-                  busyLabel="Generando jugadores…"
-                  busyShort="…"
-                  disabled={campaign.brief_status !== 'approved'}
-                  className="btn-icon--inline"
-                  onClick={() => {
-                    setPlayersError(null)
-                    setCreatePlayersOpen(true)
-                  }}
-                >
-                  <IconUsers />
-                </IconButton>
-              </div>
-              {playersError && <div style={{ color: 'var(--danger)' }}>{playersError}</div>}
-              {createPlayersOpen && (
-                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, marginTop: 12 }}>
-                  <h4 style={{ margin: '0 0 8px 0' }}>Crear personajes jugadores</h4>
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <span style={{ opacity: 0.75, fontSize: 12 }}>¿Cuántos jugadores crear? (1-8)</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={8}
-                        value={createPlayersCount}
-                        onChange={(e) => setCreatePlayersCount(Number(e.target.value))}
-                        style={{
-                          padding: 8,
-                          borderRadius: 10,
-                          border: '1px solid var(--border-subtle)',
-                          background: 'rgba(0,0,0,0.25)',
-                          color: 'inherit',
-                          width: 140,
-                        }}
-                        disabled={playersLoading}
-                      />
-                    </label>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <IconButton
-                        label="Cancelar creación de jugadores"
-                        textShort="Cancelar"
-                        disabled={playersLoading}
-                        className="btn-icon--inline"
-                        onClick={() => setCreatePlayersOpen(false)}
-                      >
-                        <IconX />
-                      </IconButton>
-                      <IconButton
-                        label="Crear y generar personajes jugadores"
-                        textShort="Crear"
-                        busy={playersLoading}
-                        busyLabel="Creando jugadores…"
-                        busyShort="…"
-                        className="btn-icon--inline"
-                        onClick={() => void onCreateAndGeneratePlayers()}
-                      >
-                        <IconSparkles />
-                      </IconButton>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {derivedPlayers.length === 0 && !playersLoading && (
-                <div>
-                  Aún no hay personajes jugadores. Deben generarse aparte y no se derivan del mundo ni de los personajes implicados.
-                </div>
-              )}
-              {derivedPlayers.length > 0 && (
-                <div style={{ display: 'grid', gap: 12 }}>
-                  <div style={{ overflow: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead style={{ background: 'var(--table-header-bg)' }}>
-                        <tr>
-                          <th style={{ textAlign: 'left', padding: 10 }}>Jugador</th>
-                          <th style={{ textAlign: 'left', padding: 10 }}>Resumen</th>
-                          <th style={{ textAlign: 'left', padding: 10 }}>Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {derivedPlayers.map((p, idx) => (
-                          <tr
-                            key={p.id}
-                            style={{
-                              borderTop: '1px solid var(--table-row-border)',
-                              background: selectedPlayerIndex === idx ? 'var(--table-row-selected)' : undefined,
-                              cursor: 'pointer',
-                            }}
-                            onClick={() => setSelectedPlayerIndex(idx)}
-                          >
-                            <td style={{ padding: 10 }}>
-                              {p.name}
-                            </td>
-                            <td style={{ padding: 10 }}>{p.summary || <span style={{ opacity: 0.75 }}>(vacío)</span>}</td>
-                            <td style={{ padding: 10 }}>
-                              <IconButton
-                                label={`Borrar personaje jugador ${p.name}`}
-                                textShort="Borrar"
-                                className="btn-icon--inline"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setPlayerDeletePending({ id: p.id, name: p.name })
-                                }}
-                              >
-                                <IconTrash />
-                              </IconButton>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {selectedPlayer ? (
-                    <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                        <h3 style={{ margin: 0, fontSize: 22, textAlign: 'left' }}>{selectedPlayer.name}</h3>
-                        <div style={{ opacity: 0.75, fontSize: 12 }}>Vista de detalle</div>
-                      </div>
-                      <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
-                        <div>
-                          <div style={{ opacity: 0.75, fontSize: 12 }}>Resumen del jugador</div>
-                          <div>{selectedPlayer.summary || <span style={{ opacity: 0.75 }}>(vacío)</span>}</div>
-                        </div>
-                        <div>
-                          <div style={{ opacity: 0.75, fontSize: 12 }}>Ficha básica</div>
-                          <div
-                            style={{
-                              marginTop: 6,
-                              border: '1px solid var(--border-subtle)',
-                              borderRadius: 10,
-                              padding: 10,
-                              background: 'var(--panel-highlight)',
-                              fontSize: 14,
-                              lineHeight: 1.45,
-                              textAlign: 'left',
-                            }}
-                          >
-                            {renderStructuredSheet(selectedPlayer.basicSheet)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ opacity: 0.8 }}>(Selecciona un jugador para ver el detalle)</div>
-                  )}
-                </div>
-              )}
-                </div>
+                <CampaignJugadoresTab
+                  campaign={campaign}
+                  derivedPlayers={derivedPlayers}
+                  playersLoading={playersLoading}
+                  playersError={playersError}
+                  createPlayersOpen={createPlayersOpen}
+                  setCreatePlayersOpen={setCreatePlayersOpen}
+                  createPlayersCount={createPlayersCount}
+                  setCreatePlayersCount={setCreatePlayersCount}
+                  setPlayersError={setPlayersError}
+                  selectedPlayerIndex={selectedPlayerIndex}
+                  setSelectedPlayerIndex={setSelectedPlayerIndex}
+                  selectedPlayer={selectedPlayer}
+                  onCreateAndGeneratePlayers={onCreateAndGeneratePlayers}
+                  setPlayerDeletePending={setPlayerDeletePending}
+                />
               )}
             </>
           )}

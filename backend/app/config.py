@@ -34,7 +34,12 @@ class Settings:
 def get_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[2]
     load_dotenv(project_root / ".env")
-    data_dir = project_root / "backend" / "data"
+    # Permite pytest/CI usar un directorio escribible (evita PermissionError si data/ fue creado por root).
+    _data_override = os.getenv("DNDHELPER_DATA_DIR", "").strip()
+    if _data_override:
+        data_dir = Path(_data_override).expanduser().resolve()
+    else:
+        data_dir = project_root / "backend" / "data"
 
     return Settings(
         project_root=project_root,

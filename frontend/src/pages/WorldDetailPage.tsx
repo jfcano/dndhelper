@@ -204,6 +204,7 @@ function VisualSlotCard(props: {
   const [imgSrc, setImgSrc] = useState<string | null>(null)
   const [imageLoadError, setImageLoadError] = useState(false)
 
+  /* eslint-disable react-hooks/set-state-in-effect -- reinicio al cambiar displayFile/cache; el fetch asíncrono asigna el blob */
   useEffect(() => {
     let dead = false
     if (!displayFile) {
@@ -260,6 +261,7 @@ function VisualSlotCard(props: {
       }
     }
   }, [worldId, displayFile, imageCacheBuster])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   return (
     <div

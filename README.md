@@ -382,6 +382,20 @@ export POSTGRES_TEST_URL="postgresql+psycopg://user:pass@host:5432/db_test"
 ./scripts/test.sh
 ```
 
+**Docker Compose (solo pytest):** el servicio `test` usa la misma imagen que el backend, crea la BD `dndhelper_test` en Postgres si no existe y ejecuta Alembic + tests. Requiere perfil `test` (no se levanta con `docker compose up` solo).
+
+```bash
+docker compose up -d db
+docker compose --profile test build test   # primera vez o tras cambiar el Dockerfile
+docker compose --profile test run --rm test
+```
+
+Argumentos extra para pytest (tras el nombre del servicio):
+
+```bash
+docker compose --profile test run --rm test backend/tests/unit -v
+```
+
 **Todo junto (pytest + Playwright):** con la API en marcha para la parte E2E, desde la raíz del repo:
 
 - **Windows (PowerShell):** `./scripts/test-all.ps1`
@@ -412,6 +426,26 @@ npm run test:e2e
 ```
 
 Playwright arranca **solo** el servidor de Vite (`npm run dev`) si no hay uno escuchando ya en la URL base. La API **no** la levanta el runner.
+
+**Docker Compose (E2E sin Node en el host):** servicio `e2e` (imagen oficial `mcr.microsoft.com/playwright`, perfil `e2e`). El navegador abre `http://frontend:80` (nginx sirve el build y hace proxy de `/api` al backend). No hace falta Vite en el contenedor (`PLAYWRIGHT_DOCKER=1`).
+
+```bash
+docker compose --profile e2e run --rm e2e
+```
+
+(En **Compose v2**, suele arrancar `db`, `backend` y `frontend` si hacen falta. Si no, `docker compose up -d db backend frontend` antes.)
+
+Argumentos extra para Playwright:
+
+```bash
+docker compose --profile e2e run --rm e2e -- --grep "solo mundos"
+```
+
+Claves opcionales (p. ej. test largo con IA): define `E2E_OPENAI_API_KEY` o `OPENAI_API_KEY` en `.env` o expórtalas al ejecutar. La contraseña maestra de setup se alinea con `SETUP_MASTER_PASSWORD` del backend vía `E2E_SETUP_MASTER_PASSWORD` en el servicio.
+
+La etiqueta de la imagen Playwright conviene alinearla con la versión resuelta de `@playwright/test` en `frontend/package-lock.json` (p. ej. `v1.58.2-noble`).
+
+El servicio monta además `./backend/storage` en `/backend/storage` para que los tests que escriben PNGs de mundo (`writeWorldImageFile`) compartan disco con el contenedor del backend (`/app/backend/storage`).
 
 **Variables útiles:**
 

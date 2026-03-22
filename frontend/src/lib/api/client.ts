@@ -1,0 +1,367 @@
+import { getAccessToken } from '../authToken'
+import type {
+  AuthTokenResponse,
+  Campaign,
+  CampaignBrief,
+  CampaignCreate,
+  CampaignUpdate,
+  CampaignWizardAutogenerateRequest,
+  CampaignWizardAutogenerateResponse,
+  IngestJobDeleteResult,
+  IngestJobRow,
+  OwnerSettingsStatus,
+  PlayerProfile,
+  QueryScope,
+  RagClearResponse,
+  RagClearTarget,
+  RagRulesResponse,
+  Session,
+  SessionUpdate,
+  SetupStatus,
+  UploadRagBatchResponse,
+  RagUploadTarget,
+  UserPublic,
+  UUID,
+  World,
+  WorldCreate,
+  WorldGenerate,
+  WorldUpdate,
+  WorldUsage,
+  WorldVisualGeneratePayload,
+  WorldWizardAutogenerateRequest,
+  WorldWizardAutogenerateResponse,
+} from './types'
+
+/**
+ * URL de una imagen persistida del mundo (sirve el backend).
+ * `cacheBuster` (p. ej. `world.updated_at`) evita que el navegador muestre la PNG antigua tras regenerar con la misma ruta.
+ */
+export function worldImageUrl(worldId: UUID, filename: string, cacheBuster?: string | null): string {
+  const base = `/api/worlds/${worldId}/image/${encodeURIComponent(filename)}`
+  if (cacheBuster == null || cacheBuster === '') return base
+  const v = encodeURIComponent(cacheBuster)
+  return `${base}?v=${v}`
+}
+
+/** Sube uno o más documentos (PDF, TXT, DOCX) para indexación RAG. Respuesta 202 Accepted. */
+export async function uploadDocuments(
+  files: File[],
+  options: { ragTarget: RagUploadTarget },
+): Promise<UploadRagBatchResponse> {
+  const formData = new FormData()
+  formData.append('rag_target', options.ragTarget)
+  for (const f of files) {
+    formData.append('files', f)
+  }
+  const headers: Record<string, string> = {}
+  const t = getAccessToken()
+  if (t) headers.Authorization = `Bearer ${t}`
+  let res: Response
+  try {
+    res = await fetch('/api/upload_pdf', {
+      method: 'POST',
+      body: formData,
+      headers,
+    })
+  } catch (e) {
+    throw new ApiError(
+      'No se pudo conectar con el backend (¿está levantado?).',
+      0,
+      e instanceof Error ? e.message : e,
+    )
+  }
+  if (!res.ok) {
+    let body: unknown = null
+    try {
+      body = await res.json()
+    } catch {
+      body = await res.text().catch(() => null)
+    }
+    throw new ApiError(`API ${res.status} ${res.statusText}`, res.status, body)
+  }
+  return (await res.json()) as UploadRagBatchResponse
+}
+
+/** @deprecated Usar uploadDocuments con la colección deseada. */
+export async function uploadRulesDocuments(files: File[]): Promise<UploadRagBatchResponse> {
+  return uploadDocuments(files, { ragTarget: 'manuals' })
+}
+
+export class ApiError extends Error {
+  status: number
+  body: unknown
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message)
+    this.status = status
+    this.body = body
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((init?.headers as Record<string, string>) ?? {}),
+  }
+  const tok = getAccessToken()
+  if (tok) headers.Authorization = `Bearer ${tok}`
+
+  let res: Response
+  try {
+    res = await fetch(path, {
+      ...init,
+      headers,
+    })
+  } catch (e) {
+    throw new ApiError(
+      'No se pudo conectar con el backend (¿está levantado?).',
+      0,
+      e instanceof Error ? e.message : e,
+    )
+  }
+  if (!res.ok) {
+    let body: unknown = null
+    try {
+      body = await res.json()
+    } catch {
+      body = await res.text().catch(() => null)
+    }
+    throw new ApiError(`API ${res.status} ${res.statusText}`, res.status, body)
+  }
+  return (await res.json()) as T
+}
+
+export const api = {
+  getSetupStatus: () => request<SetupStatus>('/api/setup/status'),
+
+  setupBootstrap: (master_password: string, username: string, password: string) =>
+    request<{ ok: boolean }>('/api/setup/', {
+      method: 'POST',
+      body: JSON.stringify({ master_password, username, password }),
+    }),
+
+  register: (username: string, password: string) =>
+    request<AuthTokenResponse>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+
+  login: (username: string, password: string) =>
+    request<AuthTokenResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+
+  getMe: () => request<UserPublic>('/api/auth/me'),
+
+  queryConsulta: (question: string, opts: { scope: QueryScope; campaign_id?: string | null }) =>
+    request<RagRulesResponse>(`/api/query_rules`, {
+      method: 'POST',
+      body: JSON.stringify({
+        question,
+        scope: opts.scope,
+        ...(opts.scope === 'campaign' && opts.campaign_id ? { campaign_id: opts.campaign_id } : {}),
+      }),
+    }),
+
+  /** @deprecated Usar queryConsulta con el ámbito adecuado. */
+  queryRules: (question: string) =>
+    request<RagRulesResponse>(`/api/query_rules`, {
+      method: 'POST',
+      body: JSON.stringify({ question, scope: 'rules' as const }),
+    }),
+
+  listRagIngestJobs: (limit = 50) =>
+    request<IngestJobRow[]>(`/api/ingest_jobs?limit=${encodeURIComponent(limit)}`),
+
+  deleteRagIngestJob: (jobId: string) =>
+    request<IngestJobDeleteResult>(`/api/ingest_jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }),
+
+  clearRagCollections: (targets: RagClearTarget[]) =>
+    request<RagClearResponse>('/api/rag/clear', {
+      method: 'POST',
+      body: JSON.stringify({ targets }),
+    }),
+
+  getOwnerSettings: () => request<OwnerSettingsStatus>('/api/settings'),
+
+  putOwnerOpenaiKey: (openai_api_key: string) =>
+    request<OwnerSettingsStatus>('/api/settings/openai', {
+      method: 'PUT',
+      body: JSON.stringify({ openai_api_key }),
+    }),
+
+  deleteOwnerOpenaiKey: () =>
+    request<OwnerSettingsStatus>('/api/settings/openai', {
+      method: 'DELETE',
+    }),
+
+  putOwnerHfToken: (hf_token: string) =>
+    request<OwnerSettingsStatus>('/api/settings/hf', {
+      method: 'PUT',
+      body: JSON.stringify({ hf_token }),
+    }),
+
+  deleteOwnerHfToken: () =>
+    request<OwnerSettingsStatus>('/api/settings/hf', {
+      method: 'DELETE',
+    }),
+
+  // Campaigns
+  listCampaigns: (limit = 50, offset = 0) =>
+    request<Campaign[]>(`/api/campaigns?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`),
+  createCampaign: (payload: CampaignCreate) => request<Campaign>(`/api/campaigns`, { method: 'POST', body: JSON.stringify(payload) }),
+  getCampaign: (id: UUID) => request<Campaign>(`/api/campaigns/${id}`),
+  patchCampaign: (id: UUID, payload: CampaignUpdate) =>
+    request<Campaign>(`/api/campaigns/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  setBrief: (id: UUID, payload: CampaignBrief) =>
+    request<Campaign>(`/api/campaigns/${id}/brief`, { method: 'POST', body: JSON.stringify(payload) }),
+  autogenerateCampaignWizardStep: (payload: CampaignWizardAutogenerateRequest) =>
+    request<CampaignWizardAutogenerateResponse>(`/api/campaigns:wizard/autogenerate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  approveBrief: (id: UUID) => request<Campaign>(`/api/campaigns/${id}/brief/approve`, { method: 'POST', body: '{}' }),
+  reopenCampaign: (id: UUID) => request<Campaign>(`/api/campaigns/${id}/reopen`, { method: 'POST', body: '{}' }),
+  patchCampaignStoryDraft: (id: UUID, story_draft: string) =>
+    request<Campaign>(`/api/campaigns/${id}/story`, {
+      method: 'PATCH',
+      body: JSON.stringify({ story_draft }),
+    }),
+  resetCampaignStoryDraft: (id: UUID) =>
+    request<Campaign>(`/api/campaigns/${id}/story/reset`, {
+      method: 'POST',
+      body: '{}',
+    }),
+  generateWorldForCampaign: (id: UUID) =>
+    request<Campaign>(`/api/campaigns/${id}/world:generate`, { method: 'POST', body: '{}' }),
+  generateOutlineForCampaign: (id: UUID) =>
+    request<Campaign>(`/api/campaigns/${id}/outline:generate`, { method: 'POST', body: '{}' }),
+  patchCampaignOutline: (id: UUID, outline: Record<string, unknown>) =>
+    request<Campaign>(`/api/campaigns/${id}/outline`, { method: 'PATCH', body: JSON.stringify(outline) }),
+  approveCampaignOutline: (id: UUID) =>
+    request<Campaign>(`/api/campaigns/${id}/outline/approve`, { method: 'POST', body: '{}' }),
+  deleteCampaign: (id: UUID, options?: { cascade?: boolean }) => {
+    const q = options?.cascade ? '?cascade=true' : ''
+    return request<{ ok: boolean }>(`/api/campaigns/${id}${q}`, { method: 'DELETE' })
+  },
+  listSessionsForCampaign: (campaignId: UUID, limit = 50, offset = 0) =>
+    request<Session[]>(
+      `/api/campaigns/${campaignId}/sessions?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`,
+    ),
+  /** Todas las sesiones del propietario (todas las campañas). `/all-sessions` evita colisión con `/sessions/{uuid}`. */
+  listSessions: (limit = 50, offset = 0) =>
+    request<Session[]>(
+      `/api/all-sessions?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`,
+    ),
+  getSession: (sessionId: UUID) => request<Session>(`/api/sessions/${sessionId}`),
+  patchSession: (sessionId: UUID, payload: SessionUpdate) =>
+    request<Session>(`/api/sessions/${sessionId}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  approveSession: (sessionId: UUID) =>
+    request<Session>(`/api/sessions/${sessionId}/approve`, { method: 'POST', body: '{}' }),
+  /**
+   * Vuelve a borrador una sesión aprobada.
+   * Incluye trazas en consola (`[dndhelper session reopen]`) para depurar proxy/404/CORS.
+   */
+  reopenSession: async (sessionId: UUID) => {
+    const path = `/api/sessions/${sessionId}/reopen`
+    const tag = '[dndhelper session reopen]'
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0
+    const snap = (extra?: Record<string, unknown>) => ({
+      sessionId,
+      path,
+      absoluteUrl:
+        typeof window !== 'undefined' ? new URL(path, window.location.origin).href : path,
+      pageUrl: typeof window !== 'undefined' ? window.location.href : null,
+      elapsedMs: typeof performance !== 'undefined' ? Math.round(performance.now() - t0) : null,
+      ...extra,
+    })
+
+    console.info(`${tag} → fetch start`, snap())
+
+    let res: Response
+    try {
+      const h: Record<string, string> = { 'Content-Type': 'application/json' }
+      const tok = getAccessToken()
+      if (tok) h.Authorization = `Bearer ${tok}`
+      res = await fetch(path, {
+        method: 'POST',
+        headers: h,
+        body: '{}',
+      })
+    } catch (e) {
+      console.error(`${tag} → fetch lanzó excepción (red/CORS/servidor caído)`, snap({ error: String(e) }))
+      throw new ApiError(
+        'No se pudo conectar con el backend (¿está levantado?).',
+        0,
+        e instanceof Error ? e.message : e,
+      )
+    }
+
+    const rawText = await res.text()
+    let parsedBody: unknown = rawText
+    try {
+      parsedBody = rawText ? JSON.parse(rawText) : null
+    } catch {
+      /* cuerpo no JSON */
+    }
+
+    console.info(`${tag} → respuesta HTTP`, snap({ status: res.status, statusText: res.statusText, ok: res.ok, body: parsedBody }))
+
+    if (!res.ok) {
+      console.error(`${tag} → error API`, snap({ status: res.status, body: parsedBody }))
+      throw new ApiError(`API ${res.status} ${res.statusText}`, res.status, parsedBody)
+    }
+
+    return parsedBody as Session
+  },
+  deleteSession: (sessionId: UUID) => request<{ ok: boolean }>(`/api/sessions/${sessionId}`, { method: 'DELETE' }),
+  generateSessionsForCampaign: (campaignId: UUID, sessionCount: number) =>
+    request<Session[]>(
+      `/api/campaigns/${campaignId}/sessions:generate?session_count=${encodeURIComponent(sessionCount)}`,
+      { method: 'POST', body: '{}' },
+    ),
+  generatePlayersForCampaign: (campaignId: UUID, playerCount: number) =>
+    request<PlayerProfile[]>(
+      `/api/campaigns/${campaignId}/players:generate?player_count=${encodeURIComponent(playerCount)}`,
+      { method: 'POST', body: '{}' },
+    ),
+  listPlayersForCampaign: (campaignId: UUID) =>
+    request<PlayerProfile[]>(`/api/campaigns/${campaignId}/players`),
+  deletePlayerForCampaign: (campaignId: UUID, playerId: string) =>
+    request<PlayerProfile[]>(`/api/campaigns/${campaignId}/players/${encodeURIComponent(playerId)}`, { method: 'DELETE' }),
+
+  // Worlds
+  listWorlds: (limit = 50, offset = 0) =>
+    request<World[]>(`/api/worlds?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`),
+  getWorld: (id: UUID) => request<World>(`/api/worlds/${id}`),
+  createWorld: (payload: WorldCreate) => request<World>(`/api/worlds`, { method: 'POST', body: JSON.stringify(payload) }),
+  generateWorld: (payload: WorldGenerate) =>
+    request<World>(`/api/worlds:generate`, { method: 'POST', body: JSON.stringify(payload) }),
+  generateWorldForExistingWorld: (id: UUID, payload: WorldGenerate) =>
+    request<World>(`/api/worlds/${id}/generate`, { method: 'POST', body: JSON.stringify(payload) }),
+  autogenerateWorldWizardStep: (payload: WorldWizardAutogenerateRequest) =>
+    request<WorldWizardAutogenerateResponse>(`/api/worlds:wizard/autogenerate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getWorldUsage: (id: UUID) => request<WorldUsage>(`/api/worlds/${id}/usage`),
+  listCampaignsForWorld: (id: UUID, limit = 50, offset = 0) =>
+    request<Campaign[]>(`/api/worlds/${id}/campaigns?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`),
+  generateWorldVisual: (id: UUID, payload: WorldVisualGeneratePayload) =>
+    request<World>(`/api/worlds/${id}/visual:generate`, {
+      method: 'POST',
+      body: JSON.stringify({
+        target: payload.target,
+        index: payload.index ?? 0,
+      }),
+    }),
+  patchWorld: (id: UUID, payload: WorldUpdate) =>
+    request<World>(`/api/worlds/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  approveWorld: (id: UUID) => request<World>(`/api/worlds/${id}/approve`, { method: 'POST', body: '{}' }),
+  reopenWorld: (id: UUID) => request<World>(`/api/worlds/${id}/reopen`, { method: 'POST', body: '{}' }),
+  deleteWorld: (id: UUID, options?: { cascade?: boolean }) => {
+    const q = options?.cascade ? '?cascade=true' : ''
+    return request<{ ok: boolean }>(`/api/worlds/${id}${q}`, { method: 'DELETE' })
+  },
+}

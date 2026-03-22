@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Generator
 
@@ -48,7 +50,14 @@ def _setup_test_db() -> Generator[None, None, None]:
     # Forzamos que apunte al DB aislado de tests.
     os.environ["POSTGRES_URL"] = postgres_test_url
     # Sin admin inicial en BD: el lifespan exige SETUP_MASTER_PASSWORD o ADMIN_*.
-    os.environ.setdefault("SETUP_MASTER_PASSWORD", "pytest_integration_setup_master")
+    # Asignación fija (no setdefault): en Docker/.env suele venir otra clave y el bootstrap de setup fallaría.
+    os.environ["SETUP_MASTER_PASSWORD"] = "pytest_integration_setup_master"
+
+    # PDFs/uploads: directorio escribible (backend/data/uploads puede ser root:root tras Docker).
+    created_pytest_data_dir: str | None = None
+    if not os.getenv("DNDHELPER_DATA_DIR"):
+        created_pytest_data_dir = tempfile.mkdtemp(prefix="dndhelper_pytest_data_")
+        os.environ["DNDHELPER_DATA_DIR"] = created_pytest_data_dir
 
     # Asegura schema actualizado.
     alembic_cfg = Config(str(project_root / "alembic.ini"))
@@ -73,6 +82,9 @@ def _setup_test_db() -> Generator[None, None, None]:
     command.upgrade(alembic_cfg, "head")
 
     yield
+
+    if created_pytest_data_dir:
+        shutil.rmtree(created_pytest_data_dir, ignore_errors=True)
 
 
 from backend.tests.helpers import ensure_test_admin_exists

@@ -110,6 +110,7 @@ export async function putOpenAiKeyForUser(request: APIRequestContext, token: str
 /**
  * Escribe un PNG en `backend/storage/world_images/<worldId>/` (misma ruta que usa la API en desarrollo).
  * `cwd` debe ser el directorio `frontend/` al ejecutar Playwright.
+ * En Docker Compose (servicio `e2e`), monta `./backend/storage` en `/backend/storage` para que el backend vea el mismo fichero.
  */
 export function writeWorldImageFile(worldId: string, filename: string, bytes: Buffer = MIN_PNG) {
   const dir = path.resolve(process.cwd(), '..', 'backend', 'storage', 'world_images', worldId)

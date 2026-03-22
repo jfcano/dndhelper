@@ -82,5 +82,60 @@ services:
       backend:
         condition: service_healthy
 
+  # pytest (misma imagen que backend). No arranca con `docker compose up`; usa perfil «test».
+  # Ej.: docker compose --profile test run --rm test
+  test:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env
+    environment:
+      POSTGRES_TEST_URL: postgresql+psycopg://dndhelper:dndhelper@db:5432/dndhelper_test
+      POSTGRES_URL: postgresql+psycopg://dndhelper:dndhelper@db:5432/dndhelper_test
+      EMBEDDINGS_DEVICE: cpu
+      INGEST_WORKER_AUTOSTART: "false"
+      # Alineado con backend/tests/conftest.py (bootstrap /api/setup en tests)
+      SETUP_MASTER_PASSWORD: pytest_integration_setup_master
+    volumes:
+      - ./backend/data:/app/backend/data
+      - ./backend/storage:/app/backend/storage
+      # Código y migraciones del host (tests sin rebuild tras cambios)
+      - ./backend:/app/backend
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+    depends_on:
+      db:
+        condition: service_healthy
+    working_dir: /app
+    entrypoint: ["/app/scripts/docker-test-entrypoint.sh"]
+    command: ["backend/tests", "-q"]
+
+  # Playwright E2E (imagen oficial con Chromium). Perfil «e2e»; usa nginx+frontend y proxy /api → backend.
+  # Ej.: docker compose --profile e2e up -d db backend frontend && docker compose --profile e2e run --rm e2e
+  e2e:
+    profiles: ["e2e"]
+    image: mcr.microsoft.com/playwright:v1.58.2-noble
+    env_file:
+      - .env
+    environment:
+      PLAYWRIGHT_BASE_URL: http://frontend:80
+      PLAYWRIGHT_DOCKER: "1"
+      CI: "1"
+      # Misma lógica que e2e/helpers (bootstrap /api/setup) alineada con SETUP_MASTER_PASSWORD del backend
+      E2E_SETUP_MASTER_PASSWORD: ${SETUP_MASTER_PASSWORD:-local-dev-setup-master}
+    working_dir: /work
+    volumes:
+      - ./frontend:/work
+      # Misma ruta que resuelve e2e/helpers writeWorldImageFile → /backend/storage/... (debe coincidir con backend:/app/backend/storage)
+      - ./backend/storage:/backend/storage
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    entrypoint: ["/bin/bash", "/work/docker-e2e-entrypoint.sh"]
+
 volumes:
   postgres_data:

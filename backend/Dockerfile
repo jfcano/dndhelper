@@ -16,8 +16,10 @@ COPY backend ./backend
 
 COPY backend/docker-entrypoint.sh backend/docker-entrypoint-worker.sh /usr/local/bin/
 COPY scripts/healthcheck-backend.sh /usr/local/bin/
+COPY scripts/ensure_test_database.py scripts/docker-test-entrypoint.sh /app/scripts/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/docker-entrypoint-worker.sh \
-    /usr/local/bin/healthcheck-backend.sh
+    /usr/local/bin/healthcheck-backend.sh \
+    /app/scripts/docker-test-entrypoint.sh
 
 ENV PYTHONUNBUFFERED=1
 
