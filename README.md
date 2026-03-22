@@ -255,6 +255,8 @@ docker compose up -d --build
 
 Los PDFs para RAG pueden dejarse en **`backend/data/`** en el host: el compose monta esa carpeta en el contenedor del backend **y** del worker (subidas desde la UI y manifiestos de ingesta). Las **imágenes de mundos** (y el resto de ficheros bajo `backend/storage/`, p. ej. `world_images/`) también se persisten mediante el volumen **`./backend/storage` → `/app/backend/storage`**.
 
+Los **embeddings** (vectores) se almacenan **solo en PostgreSQL** (pgvector). `backend/storage/` no es una base vectorial: ahí van manifiestos JSON de ingesta y ficheros de imágenes, no embeddings.
+
 La subida desde **Documentos** encola un trabajo en BD; el proceso **`ingest-worker`** (`python -m backend.scripts.ingest_worker`) lo toma y actualiza el porcentaje de progreso. Sin ese servicio (o sin ejecutar el worker en local), los trabajos quedarán en «En cola». Cada vez que el worker **arranca**, recupera trabajos que hubieran quedado en «Procesando» y los vuelve a encolar.
 
 La imagen del backend es **grande** (PyTorch / `sentence-transformers`). En Compose se fuerza **`EMBEDDINGS_DEVICE=cpu`**; para GPU haría falta configurar el runtime de NVIDIA y una imagen base distinta.
@@ -306,7 +308,7 @@ dndhelper/
 │   ├── data/                 # PDFs para indexar (no versionar contenido propietario)
 │   ├── prompt_templates/     # Plantillas de texto (RAG, campaña, sesiones, imágenes, …)
 │   ├── scripts/              # ingest_pdf, ingest_pdfs, ingest_worker (cola RAG)
-│   └── storage/              # Metadatos locales de ingesta (p. ej. manifiestos)
+│   └── storage/              # Manifiestos JSON, imágenes de mundos (vectores en Postgres/pgvector)
 └── frontend/
     ├── Dockerfile            # Build Vite + Nginx (proxy /api y /admin → backend)
     ├── nginx.docker.conf     # Configuración Nginx del contenedor frontend

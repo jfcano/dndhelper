@@ -3,7 +3,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Vector store persistente (mantener si quieres conservar embeddings)
+# Ficheros locales del backend (manifiestos de ingesta, imágenes de mundos, etc.).
+# Los embeddings viven en PostgreSQL (pgvector), no aquí.
 backend/storage/
 
 # PDFs locales (opcional, depende de si quieres commitearlos)
