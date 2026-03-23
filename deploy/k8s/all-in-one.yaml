@@ -4,17 +4,10 @@
 # 1) Edita el Secret dndhelper-secrets: contraseñas y POSTGRES_URL coherentes con POSTGRES_USER/PASSWORD.
 # 2) (Opcional) Cambia el tag de imagen si no quieres `latest`.
 # 3) kubectl apply -f deploy/k8s/all-in-one.yaml
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: dndhelper
----
 apiVersion: v1
 kind: Secret
 metadata:
   name: dndhelper-secrets
-  namespace: dndhelper
 type: Opaque
 stringData:
   POSTGRES_USER: dndhelper
@@ -29,7 +22,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: dndhelper-postgres
-  namespace: dndhelper
   labels:
     app: postgres
 spec:
@@ -43,7 +35,6 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres
-  namespace: dndhelper
 spec:
   serviceName: dndhelper-postgres
   replicas: 1
@@ -111,7 +102,6 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: dndhelper-app-data
-  namespace: dndhelper
 spec:
   accessModes:
     - ReadWriteOnce
@@ -123,7 +113,6 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: dndhelper-app-storage
-  namespace: dndhelper
 spec:
   accessModes:
     - ReadWriteOnce
@@ -135,7 +124,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: dndhelper-backend
-  namespace: dndhelper
   labels:
     app: dndhelper-backend
 spec:
@@ -197,6 +185,7 @@ spec:
                 secretKeyRef:
                   name: dndhelper-secrets
                   key: SETUP_MASTER_PASSWORD
+                  optional: true
             - name: INGEST_WORKER_AUTOSTART
               value: "false"
             - name: EMBEDDINGS_DEVICE
@@ -232,7 +221,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: dndhelper-backend
-  namespace: dndhelper
 spec:
   selector:
     app: dndhelper-backend
@@ -244,7 +232,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: dndhelper-ingest-worker
-  namespace: dndhelper
   labels:
     app: dndhelper-ingest-worker
 spec:
@@ -289,6 +276,7 @@ spec:
                 secretKeyRef:
                   name: dndhelper-secrets
                   key: SETUP_MASTER_PASSWORD
+                  optional: true
             - name: INGEST_WORKER_AUTOSTART
               value: "false"
             - name: EMBEDDINGS_DEVICE
@@ -328,7 +316,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: dndhelper-frontend
-  namespace: dndhelper
   labels:
     app: dndhelper-frontend
 spec:
@@ -378,7 +365,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: dndhelper-frontend
-  namespace: dndhelper
 spec:
   selector:
     app: dndhelper-frontend
@@ -391,7 +377,6 @@ spec:
 # kind: Ingress
 # metadata:
 #   name: dndhelper
-#   namespace: dndhelper
 # spec:
 #   rules:
 #     - host: dndhelper.example.com
