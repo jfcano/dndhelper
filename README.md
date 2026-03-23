@@ -281,6 +281,114 @@ También puedes usar Compose con perfiles `test`/`e2e`.
 
 ## d. Estructura del proyecto
 
+Esta sección describe el código por **bloques funcionales** y cómo se conectan entre sí, para que puedas ubicar rápido dónde tocar según el tipo de cambio.
+
+### Visión arquitectónica (alto nivel)
+
+```mermaid
+flowchart TD
+    frontend["Frontend (React/Vite)"]
+    api["Backend API (FastAPI routers)"]
+    domain["Capa de dominio (schemas + crud + services)"]
+    ai["Servicios IA (OpenAI: chat, embeddings, imágenes)"]
+    rag["Subsistema RAG (ingesta + consulta semántica)"]
+    pg["PostgreSQL (datos + pgvector)"]
+    storage["Disco (uploads, manifiestos, imágenes)"]
+
+    frontend -->|"HTTP /api + JWT"| api
+    api -->|"Delega lógica"| domain
+    domain --> ai
+    domain --> rag
+    domain -->|"Persistencia relacional/vectorial"| pg
+    rag -->|"Colecciones y embeddings"| pg
+    rag -->|"Ficheros de entrada/salida"| storage
+    ai -->|"Resultados de imágenes"| storage
+```
+
+### Bloques principales del código fuente
+
+#### 1) Backend HTTP y composición de aplicación
+
+- `backend/app/main.py`: punto de entrada FastAPI, middlewares, registro de routers, endpoints de salud y ciclo de vida.
+- `backend/app/api/`: capa de exposición HTTP por contexto funcional:
+  - `auth.py` (registro/login/me),
+  - `campaigns.py`, `sessions.py`, `worlds.py` (dominio de juego),
+  - `rag.py` (consultas y cola de documentos),
+  - `settings.py` (claves por usuario),
+  - `setup.py` (instalación inicial).
+
+Relación: los routers validan entrada/salida, delegan lógica en capa de dominio/servicios y devuelven respuestas HTTP.
+
+#### 2) Núcleo de dominio y reglas de negocio
+
+- `backend/app/schemas.py`: contratos Pydantic (request/response).
+- `backend/app/models.py`: entidades ORM (usuarios, campañas, sesiones, trabajos de ingesta, etc.).
+- `backend/app/crud.py`: operaciones de persistencia y consultas de negocio.
+- `backend/app/services/`: lógica no trivial (RAG, generación, imágenes, etc.).
+
+Relación: es la capa donde vive el comportamiento real; API y scripts entran aquí para evitar duplicar lógica.
+
+#### 3) Configuración, seguridad y contexto
+
+- `backend/app/config.py`: settings centralizados desde entorno.
+- `backend/app/db.py`: creación de engine/sesiones SQLAlchemy.
+- Componentes de auth/contexto (`auth_middleware`, `owner_context`, repos de usuario): controlan identidad, permisos y aislamiento por `owner_id`.
+
+Relación: este bloque atraviesa todo el backend; cualquier endpoint sensible depende de él para autorizaciones y scoping de datos.
+
+#### 4) Subsistema RAG (documentos y consulta semántica)
+
+- Entrada HTTP en `backend/app/api/rag.py`.
+- Ingesta asíncrona mediante trabajos en BD + worker (`backend/scripts/ingest_worker.py`).
+- Scripts utilitarios de carga (`ingest_pdf.py`, `ingest_pdfs.py`).
+- Integración vectorial y utilidades de colección por usuario en módulos RAG del backend.
+
+Relación: la API encola documentos, el worker los procesa y actualiza estado, y las consultas leen el índice vectorial por alcance (`rules`, `campaigns_general`, `campaign`).
+
+#### 5) Subsistema de generación de contenido e imágenes
+
+- Generación textual de campañas/sesiones/mundos dentro de servicios del backend.
+- Generación de imágenes bajo demanda en `backend/app/services/world_image_service.py`.
+- Plantillas de prompts en `backend/prompt_templates/`.
+
+Relación: los servicios consumen claves/modelos configurados por usuario y escriben resultado en BD o en `backend/storage/` según el tipo de activo.
+
+#### 6) Frontend SPA (presentación y flujo de usuario)
+
+- `frontend/src/router.tsx`: mapa de navegación y protección de rutas.
+- `frontend/src/pages/`: pantallas por caso de uso (campañas, mundos, consultas, documentos, ajustes).
+- `frontend/src/components/`: piezas reutilizables de UI y layout.
+- `frontend/src/lib/api.ts`: cliente HTTP hacia backend.
+
+Relación: el frontend no contiene reglas de negocio críticas; orquesta formularios/estado de UI y delega operaciones al backend vía API.
+
+#### 7) Infraestructura y operación
+
+- `docker-compose.yml`: topología local/servidor simple (db + backend + ingest-worker + frontend).
+- `deploy/k8s/all-in-one.yaml`: despliegue de referencia en Kubernetes.
+- `scripts/`: tests, healthchecks y entrypoints auxiliares.
+- `alembic/`: migraciones de esquema.
+
+Relación: este bloque no implementa funcionalidad de negocio, pero garantiza que los bloques anteriores arranquen, migren y se supervisen correctamente.
+
+### Cómo se relacionan los bloques en un flujo real
+
+Ejemplo: subida de un manual y consulta posterior
+
+1. Frontend envía archivo a `POST /api/upload_pdf`.
+2. Router RAG valida y crea job de ingesta en PostgreSQL.
+3. `ingest-worker` toma el job, procesa el documento y actualiza vectores/estado.
+4. Usuario pregunta en `/consultas`; backend busca por embeddings y devuelve respuesta con fuentes.
+
+Ejemplo: generación de una sesión
+
+1. Frontend invoca endpoint de campañas/sesiones.
+2. Router delega en servicios de generación (prompts + modelo).
+3. Servicio persiste borrador/final en entidades de dominio.
+4. Frontend refresca datos y muestra el resultado al usuario.
+
+### Árbol físico del repositorio (referencia rápida)
+
 ```text
 dndhelper/
 ├── README.md
