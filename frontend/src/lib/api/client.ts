@@ -196,17 +196,6 @@ export const api = {
       method: 'DELETE',
     }),
 
-  putOwnerHfToken: (hf_token: string) =>
-    request<OwnerSettingsStatus>('/api/settings/hf', {
-      method: 'PUT',
-      body: JSON.stringify({ hf_token }),
-    }),
-
-  deleteOwnerHfToken: () =>
-    request<OwnerSettingsStatus>('/api/settings/hf', {
-      method: 'DELETE',
-    }),
-
   // Campaigns
   listCampaigns: (limit = 50, offset = 0) =>
     request<Campaign[]>(`/api/campaigns?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`),

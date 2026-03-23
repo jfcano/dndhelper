@@ -44,7 +44,6 @@ const RAG_CLEAR_DETAILS = [
 export function SettingsPage() {
   const [status, setStatus] = useState<OwnerSettingsStatus | null>(null)
   const [keyInput, setKeyInput] = useState('')
-  const [hfInput, setHfInput] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -105,37 +104,6 @@ export function SettingsPage() {
     }
   }
 
-  async function onSaveHf(e: FormEvent) {
-    e.preventDefault()
-    const t = hfInput.trim()
-    if (t.length < 4) {
-      setError('El token de Hugging Face debe tener al menos 4 caracteres.')
-      return
-    }
-    setSaving(true)
-    setError(null)
-    try {
-      setStatus(await api.putOwnerHfToken(t))
-      setHfInput('')
-    } catch (err) {
-      setError(formatError(err))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function onClearHf() {
-    setSaving(true)
-    setError(null)
-    try {
-      setStatus(await api.deleteOwnerHfToken())
-    } catch (err) {
-      setError(formatError(err))
-    } finally {
-      setSaving(false)
-    }
-  }
-
   async function confirmClearRag() {
     if (!ragClearDialogTargets) return
     const targets = ragClearDialogTargets
@@ -159,9 +127,9 @@ export function SettingsPage() {
       </div>
 
       <p className="muted" style={{ marginTop: 0 }}>
-        Las claves de <strong>OpenAI</strong> y <strong>Hugging Face</strong> se guardan en la base de datos asociadas a
-        tu cuenta. Las rutas de IA (chat, embeddings, imágenes, RAG) requieren una clave OpenAI guardada aquí; sin ella
-        verás un error pidiendo que la configures.
+        La clave de <strong>OpenAI</strong> se guarda en la base de datos asociada a tu cuenta. Las rutas de IA (chat,
+        embeddings, imágenes, RAG) requieren una clave OpenAI guardada aquí; sin ella verás un error pidiendo que la
+        configures.
       </p>
 
       {loading ? <p className="loading">Cargando…</p> : null}
@@ -174,14 +142,6 @@ export function SettingsPage() {
               <span style={{ color: 'var(--success)' }}>guardada</span>
             ) : (
               <span className="muted">no hay clave guardada</span>
-            )}
-          </p>
-          <p style={{ marginBottom: 0 }}>
-            <strong>Token Hugging Face en la aplicación:</strong>{' '}
-            {status.has_stored_hf_token ? (
-              <span style={{ color: 'var(--success)' }}>guardado</span>
-            ) : (
-              <span className="muted">no hay token guardado</span>
             )}
           </p>
         </div>
@@ -224,46 +184,6 @@ export function SettingsPage() {
           platform.openai.com/api-keys
         </a>
         . No compartas la clave ni la subas a repositorios públicos.
-      </p>
-
-      <form className="card-panel rag-query-form" style={{ marginTop: '1rem' }} onSubmit={onSaveHf}>
-        <h3 className="muted" style={{ marginTop: 0, fontSize: '1rem' }}>
-          Hugging Face
-        </h3>
-        <p className="muted" style={{ marginTop: 0, fontSize: '0.9rem' }}>
-          Opcional: token del Hub para descargas de modelos (p. ej. sentence-transformers) sin límites tan estrictos.
-        </p>
-        <label htmlFor="hf-token" className="muted" style={{ fontSize: '0.9rem' }}>
-          Nuevo token
-        </label>
-        <input
-          id="hf-token"
-          name="hf_token"
-          type="password"
-          autoComplete="off"
-          value={hfInput}
-          onChange={(e) => setHfInput(e.target.value)}
-          placeholder="hf_…"
-          disabled={saving}
-        />
-        <div className="btn-row">
-          <button type="submit" disabled={saving}>
-            {saving ? 'Guardando…' : 'Guardar token'}
-          </button>
-          {status?.has_stored_hf_token ? (
-            <button type="button" disabled={saving} onClick={() => void onClearHf()}>
-              Quitar token guardado
-            </button>
-          ) : null}
-        </div>
-      </form>
-
-      <p className="muted" style={{ fontSize: '0.9rem' }}>
-        Crea un token en{' '}
-        <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer">
-          huggingface.co/settings/tokens
-        </a>
-        .
       </p>
 
       {ragClearDialogMeta && ragClearDialogTargets ? (

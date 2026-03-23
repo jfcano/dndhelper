@@ -119,8 +119,8 @@ services:
       PLAYWRIGHT_DOCKER: "1"
       CI: "1"
       E2E_BACKEND_STORAGE_DIR: /backend/storage
-      # Si quieres bootstrap automático en E2E, exporta SETUP_MASTER_PASSWORD (o E2E_SETUP_MASTER_PASSWORD).
-      E2E_SETUP_MASTER_PASSWORD: ${SETUP_MASTER_PASSWORD:-}
+      # Clave de bootstrap para entorno de pruebas E2E (no usar en producción).
+      E2E_SETUP_MASTER_PASSWORD: pytest_integration_setup_master
     working_dir: /work
     volumes:
       # Misma ruta que resuelve e2e/helpers writeWorldImageFile → /backend/storage/... (debe coincidir con backend:/app/backend/storage)

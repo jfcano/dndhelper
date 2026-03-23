@@ -95,7 +95,6 @@ class OwnerSettings(Base):
 
     owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     openai_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
-    hf_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

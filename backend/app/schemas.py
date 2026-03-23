@@ -196,20 +196,12 @@ class OwnerSettingsOut(BaseModel):
     """Estado de claves en Ajustes (nunca se devuelven secretos)."""
 
     has_stored_openai_key: bool
-    has_stored_hf_token: bool
 
 
 class OwnerSettingsOpenAIUpdate(BaseModel):
     openai_api_key: str = Field(
         min_length=8,
         description="Clave de API de OpenAI (sk-...).",
-    )
-
-
-class OwnerSettingsHFUpdate(BaseModel):
-    hf_token: str = Field(
-        min_length=4,
-        description="Token de Hugging Face (Hub) para descargas sin rate limit agresivo.",
     )
 
 

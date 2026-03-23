@@ -471,11 +471,9 @@ El servicio monta además `./backend/storage` en `/backend/storage` para que los
 
 ### Ajustes (claves por usuario)
 
-- `GET /api/settings` — estado (`has_stored_openai_key`, `has_stored_hf_token`; no se devuelven secretos).
+- `GET /api/settings` — estado (`has_stored_openai_key`; no se devuelven secretos).
 - `PUT /api/settings/openai` — cuerpo `{"openai_api_key": "sk-..."}`; persiste para el usuario autenticado.
 - `DELETE /api/settings/openai` — borra la clave OpenAI guardada en BD.
-- `PUT /api/settings/hf` — cuerpo `{"hf_token": "hf_..."}`; token de Hugging Face Hub (opcional).
-- `DELETE /api/settings/hf` — borra el token HF guardado.
 
 ### RAG
 

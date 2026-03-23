@@ -202,7 +202,6 @@ export type QueryScope = 'rules' | 'campaigns_general' | 'campaign'
 
 export type OwnerSettingsStatus = {
   has_stored_openai_key: boolean
-  has_stored_hf_token: boolean
 }
 
 export type PdfEnqueueResponse = {
