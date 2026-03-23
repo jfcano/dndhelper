@@ -155,3 +155,32 @@ def test_sessions_generate_requires_outline_approved(client, monkeypatch: pytest
     r = client.post(f"/api/campaigns/{cid}/sessions:generate?session_count=1", json={})
     assert r.status_code == 400
 
+
+def test_sessions_generate_returns_502_when_model_json_is_invalid(client, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.services import generation_service
+
+    monkeypatch.setattr(generation_service, "generate_campaign_story_draft", lambda *args, **kwargs: "## Story")
+    monkeypatch.setattr(
+        generation_service,
+        "generate_outline",
+        lambda *args, **kwargs: type("GO", (), {"campaign_title": "Camp", "raw": {"outline": "ok"}})(),
+    )
+    monkeypatch.setattr(
+        generation_service,
+        "generate_sessions",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("json inválido")),
+    )
+
+    wid = _create_world_and_approve(client)
+    cid = _create_campaign_link_to_world(client, world_id=wid)
+    brief = {"kind": "sandbox", "themes": ["aventura"], "starting_level": 1, "inspirations": [], "tone": "heroico"}
+
+    assert client.post(f"/api/campaigns/{cid}/brief", json=brief).status_code == 200
+    assert client.post(f"/api/campaigns/{cid}/brief/approve", json={}).status_code == 200
+    assert client.post(f"/api/campaigns/{cid}/outline:generate", json={}).status_code == 200
+    assert client.post(f"/api/campaigns/{cid}/outline/approve", json={}).status_code == 200
+
+    r = client.post(f"/api/campaigns/{cid}/sessions:generate?session_count=1", json={})
+    assert r.status_code == 502
+    assert "salida no válida" in r.json().get("detail", "").lower()
+

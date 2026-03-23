@@ -7,6 +7,7 @@ Incluido desde `campaigns.router` para mantener `campaigns.py` más acotado.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Annotated
 from uuid import UUID, uuid4
 
@@ -28,6 +29,7 @@ from backend.app.schemas import CampaignOut, SessionCreate, SessionOut
 from backend.app.services import generation_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _OpenAIDep = Annotated[str, Depends(require_openai_api_key_ctx)]
 
@@ -103,11 +105,18 @@ def generate_sessions_for_campaign(
     )
     starting_session_number = max((s.session_number for s in existing_sessions), default=0) + 1
 
-    sessions_raw = generation_service.generate_sessions(
-        story_md=story_text,
-        session_count=max(1, min(session_count, 20)),
-        starting_session_number=starting_session_number,
-    )
+    try:
+        sessions_raw = generation_service.generate_sessions(
+            story_md=story_text,
+            session_count=max(1, min(session_count, 20)),
+            starting_session_number=starting_session_number,
+        )
+    except ValueError as e:
+        logger.warning("sessions.generate: salida no válida del modelo campaign_id=%s error=%s", campaign_id, e)
+        raise HTTPException(
+            status_code=502,
+            detail="El modelo devolvió una salida no válida al generar sesiones. Inténtalo de nuevo.",
+        ) from e
 
     created: list[SessionOut] = []
     for idx, s in enumerate(sessions_raw):

@@ -502,15 +502,28 @@ def generate_sessions(
 ) -> list[dict]:
     llm = _get_llm()
     story_md_snippet = str(story_md or "").strip()[:12000]
+    base_prompt = sessions_prompt_es(
+        story_md=story_md_snippet,
+        session_count=session_count,
+        starting_session_number=starting_session_number,
+    )
     messages = [
         ("system", system_rules_es()),
-        ("user", sessions_prompt_es(
-            story_md=story_md_snippet,
-            session_count=session_count,
-            starting_session_number=starting_session_number,
-        )),
+        ("user", base_prompt),
     ]
-    raw = _parse_json(llm.invoke(messages).content)
+    try:
+        raw = _parse_json(llm.invoke(messages).content)
+    except ValueError:
+        # Reintento único con instrucción explícita de JSON estricto.
+        strict_messages = [
+            ("system", system_rules_es()),
+            (
+                "user",
+                base_prompt
+                + "\n\nIMPORTANTE: responde SOLO con JSON válido, sin comentarios, sin markdown y sin comas finales.",
+            ),
+        ]
+        raw = _parse_json(llm.invoke(strict_messages).content)
     sessions = raw.get("sessions")
     if not isinstance(sessions, list):
         raise ValueError("Salida inválida: falta 'sessions' como lista.")
