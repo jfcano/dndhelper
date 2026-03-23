@@ -119,6 +119,8 @@ services:
       PLAYWRIGHT_DOCKER: "1"
       CI: "1"
       E2E_BACKEND_STORAGE_DIR: /backend/storage
+      # Token OpenAI para specs E2E de generación (puede venir de .env).
+      E2E_OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Clave de bootstrap para entorno de pruebas E2E (no usar en producción).
       E2E_SETUP_MASTER_PASSWORD: pytest_integration_setup_master
     working_dir: /work
