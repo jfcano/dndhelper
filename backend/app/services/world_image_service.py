@@ -41,9 +41,6 @@ def clear_world_images_dir(world_id: UUID) -> None:
 
 
 def images_generation_allowed() -> bool:
-    s = get_settings()
-    if not s.world_image_generation_enabled:
-        return False
     try:
         get_openai_key_for_llm_and_embeddings()
     except RuntimeError:

@@ -22,7 +22,6 @@ class Settings:
     setup_master_password: str | None  # instalación vía UI; obligatoria si no hay ADMIN_* ni admin en BD
     openai_model: str
     openai_image_model: str
-    world_image_generation_enabled: bool
     openai_embeddings_model: str
     chunk_size: int
     chunk_overlap: int
@@ -55,8 +54,6 @@ def get_settings() -> Settings:
         setup_master_password=os.getenv("SETUP_MASTER_PASSWORD", "").strip() or None,
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         openai_image_model=os.getenv("OPENAI_IMAGE_MODEL", "dall-e-3"),
-        world_image_generation_enabled=os.getenv("WORLD_IMAGE_GENERATION", "true").strip().lower()
-        in ("1", "true", "yes", "y", "on"),
         openai_embeddings_model=os.getenv("OPENAI_EMBEDDINGS_MODEL", "text-embedding-3-large"),
         chunk_size=int(os.getenv("RAG_CHUNK_SIZE", "1200")),
         chunk_overlap=int(os.getenv("RAG_CHUNK_OVERLAP", "200")),

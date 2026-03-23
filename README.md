@@ -1,514 +1,394 @@
 # DnD Helper
 
-Asistente para **Dungeons & Dragons** (orientado a 5e) que combina **consultas tipo RAG** sobre PDFs de reglas o lore con **herramientas de campaña**: creación y edición de campañas, mundos generados con IA, guiones por sesión y activos visuales opcionales (mapas, emblemas, retratos).
+DnD Helper es una aplicación web para directores/as de juego de Dungeons & Dragons (5e) que combina dos capacidades en un único flujo:
 
-El proyecto está pensado como **MVP multiplataforma** (Windows y Linux): backend en Python, datos en **PostgreSQL** con **pgvector**, y una interfaz **React** para el flujo principal de campañas y mundos.
+- gestión de campañas, mundos y sesiones;
+- consultas inteligentes tipo RAG sobre documentación (manuales y material de campaña).
 
----
-
-## Tabla de contenidos
-
-1. [Descripción general](#descripción-general)
-2. [Stack tecnológico](#stack-tecnológico)
-3. [Requisitos previos](#requisitos-previos)
-4. [Instalación](#instalación)
-5. [Configuración (`.env`)](#configuración-env)
-6. [Base de datos y migraciones](#base-de-datos-y-migraciones)
-7. [Ingesta de PDFs (RAG)](#ingesta-de-pdfs-rag)
-8. [Ejecución](#ejecución)
-9. [Docker Compose](#docker-compose)
-10. [Estructura del proyecto](#estructura-del-proyecto)
-11. [Funcionalidades principales](#funcionalidades-principales)
-12. [Tests](#tests) — [E2E Playwright (frontend)](#tests-e2e-playwright-frontend)
-13. [API y referencia rápida](#api-y-referencia-rápida)
+La idea del proyecto es que puedas preparar y evolucionar una campaña completa desde una interfaz única, con apoyo de modelos de lenguaje, almacenamiento relacional y búsqueda semántica.
 
 ---
 
-## Descripción general
+## a. Descripción general del proyecto
 
-**DnD Helper** permite:
+DnD Helper está construido como una solución full-stack con backend en FastAPI, frontend en React y PostgreSQL como base de datos principal (incluyendo vectores con pgvector).
 
-- **Preguntar en lenguaje natural** sobre el contenido de los PDFs indexados (reglas, trasfondos, etc.), recuperando fragmentos relevantes y generando una respuesta con un modelo de lenguaje.
-- **Gestionar campañas** con un flujo por fases: brief del director, historia/guion de campaña, outline, y **sesiones** numeradas con borradores que pueden aprobarse o reabrirse.
-- **Definir mundos** vinculados a campañas: texto en borrador o final, y **plantilla de imágenes** (mapa mundial, mapas locales, emblemas, retratos) generables **bajo demanda** mediante la API de imágenes de OpenAI cuando está habilitado.
+De forma práctica, el sistema te permite:
 
-Los datos se aislan **por usuario registrado**: cada cuenta tiene su propio `owner_id` (UUID) y solo ve mundos, campañas, ajustes OpenAI, trabajos RAG y la **colección de embeddings** que le corresponden. La API exige **JWT** (`Authorization: Bearer …`) salvo en registro e inicio de sesión.
+- crear campañas a partir de un brief;
+- generar y revisar historias, outlines y sesiones;
+- vincular campañas con mundos y activos visuales;
+- subir documentos (PDF, TXT, DOCX) para consultas con recuperación semántica.
 
----
+### Cómo funciona a nivel funcional
 
-## Stack tecnológico
+1. El usuario se registra o inicia sesión.
+2. Define ajustes (por ejemplo, clave de OpenAI en Ajustes).
+3. Crea campaña/mundo/sesiones o sube documentación.
+4. Consulta por lenguaje natural:
+   - **scope `rules`** para manuales/reglas;
+   - **scope `campaigns_general`** para referencias generales de campañas;
+   - **scope `campaign`** para una campaña concreta.
 
-| Capa | Tecnologías |
-|------|-------------|
-| **API** | [FastAPI](https://fastapi.tiangolo.com/), [Uvicorn](https://www.uvicorn.org/) |
-| **IA / RAG** | [LangChain](https://www.langchain.com/) (OpenAI: chat + embeddings), recuperación con [langchain-postgres](https://github.com/langchain-ai/langchain-postgres) / **PGVector** |
-| **Datos relacionales y vectoriales** | [PostgreSQL](https://www.postgresql.org/) + [pgvector](https://github.com/pgvector/pgvector), [SQLAlchemy](https://www.sqlalchemy.org/), [Alembic](https://alembic.sqlalchemy.org/) |
-| **PDFs** | [pypdf](https://pypdf.readthedocs.io/) vía LangChain |
-| **Frontend (app principal)** | [React](https://react.dev/) 19, [React Router](https://reactrouter.com/) 7, [TypeScript](https://www.typescriptlang.org/), [Vite](https://vitejs.dev/) 8 |
-| **UI admin mínima** | HTML/JS estático servido bajo `/admin` (`backend/admin_ui/`) |
-| **Tests** | [pytest](https://pytest.org/), [HTTPX](https://www.python-httpx.org/), [Playwright](https://playwright.dev/) (E2E frontend) |
+### Aislamiento por usuario
 
-Dependencias Python declaradas en `requirements.txt` (incluye paquetes LangChain y utilidades como `sentence-transformers` según el árbol de dependencias del proyecto).
+Cada cuenta trabaja sobre sus propios recursos (`owner_id`):
 
----
+- campañas, mundos y sesiones;
+- trabajos de ingesta;
+- colecciones RAG en pgvector;
+- ficheros subidos en `backend/data/uploads/<owner_id>/`.
 
-## Requisitos previos
-
-- **Python 3.10+** (recomendado 3.11).
-- **Node.js** (LTS recomendado) y **npm**, para el frontend React en `frontend/`.
-- **PostgreSQL** con la extensión **`vector`** (pgvector).
-- Cuenta **OpenAI** (la clave de API se configura en **Ajustes** de la aplicación, no en `.env`) para chat, embeddings e (opcionalmente) generación de imágenes.
+Un usuario administrador puede operar sobre recursos de otros usuarios cuando procede.
 
 ---
 
-## Instalación
+## b. Stack tecnológico utilizado
 
-### 1. Clonar y entorno virtual (Python)
+### Backend y API
 
-Desde la **raíz del repositorio** (`dndhelper`):
+- **Python** (entorno local recomendado 3.11+, imagen Docker basada en 3.12).
+- **FastAPI** + **Uvicorn**.
+- **SQLAlchemy** + **Alembic** para ORM y migraciones.
+- **PyJWT** + `bcrypt` para autenticación.
+
+### Datos y búsqueda semántica
+
+- **PostgreSQL** como base relacional.
+- **pgvector** para embeddings y recuperación vectorial.
+- **LangChain** (`langchain-openai`, `langchain-postgres`, splitters, loaders).
+- Ingesta de documentos con soporte para **PDF/TXT/DOCX**.
+
+### Frontend
+
+- **React 19** + **React Router 7**.
+- **TypeScript** + **Vite 8**.
+- En desarrollo, Vite usa proxy `/api` hacia `http://127.0.0.1:8000`.
+
+### Infra y despliegue
+
+- **Docker Compose** con servicios: `db`, `backend`, `ingest-worker`, `frontend` (+ perfiles `test` y `e2e`).
+- **Kubernetes** (manifiesto de referencia en `deploy/k8s/all-in-one.yaml`).
+- **Nginx** para servir frontend en contenedor y enrutar `/api` y `/admin` al backend.
+
+### Testing
+
+- **pytest** para backend.
+- **Playwright** para E2E de frontend.
+
+---
+
+## c. Información sobre su instalación y ejecución
+
+Esta sección está pensada para que puedas levantar el proyecto sin adivinar pasos.
+
+### 1) Requisitos previos
+
+- Python 3.11+ (3.12 también válido).
+- Node.js LTS + npm.
+- PostgreSQL con extensión `vector` (pgvector).
+- (Opcional, pero habitual) clave OpenAI para chat/embeddings/imágenes.
+- Docker + Compose v2 (si usarás contenedores).
+
+### 2) Instalación en local (desarrollo)
+
+Desde la raíz del repositorio:
 
 ```bash
 python -m venv .venv
-```
-
-Activación:
-
-- **Windows (PowerShell):** `.venv\Scripts\activate`
-- **Linux / macOS:** `source .venv/bin/activate`
-
-```bash
+source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
 ```
 
-### 2. Frontend (React)
+Instala frontend:
 
 ```bash
 cd frontend
 npm install
+cd ..
 ```
 
-### 3. Proxy de Vite (desarrollo)
+### 3) Configuración de entorno
 
-El cliente usa rutas relativas (`/api/...`). El archivo **`frontend/vite.config.ts`** reenvía `/api` a **`http://127.0.0.1:8000`** mientras corres `npm run dev`. Si el backend escucha en otro host o puerto, ajusta `server.proxy` ahí.
+Crea tu `.env` a partir del ejemplo:
 
----
+```bash
+cp .env.example .env
+```
 
-## Configuración (`.env`)
+Variables mínimas recomendadas:
 
-Copia `.env.example` a `.env` y completa al menos:
+- `POSTGRES_URL`: conexión principal a PostgreSQL.
+- `JWT_SECRET`: secreto de tokens (cámbialo siempre en entornos reales).
+- `POSTGRES_TEST_URL`: base aislada para tests.
 
-| Variable | Descripción |
-|----------|-------------|
-| `POSTGRES_URL` | Cadena SQLAlchemy, p. ej. `postgresql+psycopg://usuario:password@localhost:5432/nombre_bd` |
-| `JWT_SECRET` | Secreto para firmar tokens de acceso; **obligatorio cambiarlo en producción**. |
-| `JWT_EXPIRE_MINUTES` | Validez del token (por defecto 10080 ≈ 7 días). |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Opcionales: si ambas están definidas, al **arrancar la API** se crea (o se actualiza) un usuario **administrador** con acceso a los recursos de todos los usuarios. |
-| `RAG_COLLECTION` | Nombre de colección por defecto para los **scripts** `ingest_pdf` / `ingest_pdfs` **sin** `--owner-id`. Con `--owner-id`, la web y el CLI comparten la colección de **manuales** (`rag_u_<hex>_manuals`). La colección de **referencias de campaña** es `rag_u_<hex>_campaign` (material generado y consultas amplias). |
+Variables de arranque importantes:
 
-Opcionales frecuentes:
+- `ADMIN_USERNAME` / `ADMIN_PASSWORD`: crea/actualiza admin al iniciar API.
+- `SETUP_MASTER_PASSWORD`: necesaria para instalación inicial vía `/setup` cuando no existe ningún admin.
+- `INGEST_WORKER_AUTOSTART` y `INGEST_WORKER_COUNT`: controlan workers de ingesta al arrancar uvicorn.
 
-| Variable | Descripción |
-|----------|-------------|
-| `OPENAI_MODEL` | Modelo de chat (por defecto `gpt-4o-mini`) |
-| `OPENAI_EMBEDDINGS_MODEL` | Modelo de embeddings (por defecto `text-embedding-3-large`) |
-| `RAG_COLLECTION` | Nombre lógico de la colección vectorial (por defecto `rules_5e`) |
-| `RAG_CHUNK_SIZE` / `RAG_CHUNK_OVERLAP` | Particionado de texto al indexar |
-| `OPENAI_IMAGE_MODEL` | Imágenes (por defecto `dall-e-3`) |
-| `WORLD_IMAGE_GENERATION` | `true`/`false`: habilita o deshabilita llamadas a la API de imágenes para mundos |
-| `POSTGRES_TEST_URL` | Base de datos **aparte** para tests automatizados |
-| `INGEST_WORKER_AUTOSTART` | `true`/`false` (por defecto `true`): si es `true`, uvicorn lanza proceso(s) de ingesta RAG. Pon `false` si ejecutas el worker a mano o en otro contenedor (p. ej. Compose). |
-| `INGEST_WORKER_COUNT` | Entero `0`–`32` (por defecto `1`): número de subprocesos `ingest_worker` que arranca uvicorn. `0` no lanza ninguno (útil con `INGEST_WORKER_AUTOSTART=true` si solo quieres desactivar workers sin tocar el flag). Varias instancias comparten la misma cola en BD (`SKIP LOCKED`). |
+Modelos IA configurables:
 
----
+- `OPENAI_MODEL` (chat).
+- `OPENAI_EMBEDDINGS_MODEL` (embeddings).
+- `OPENAI_IMAGE_MODEL` (imágenes).
 
-## Base de datos y migraciones
+La generación de imágenes de mundos está habilitada siempre que el usuario tenga una clave OpenAI activa en Ajustes.
 
-1. En PostgreSQL:
+### 4) Base de datos y migraciones
+
+Primero habilita pgvector en tu Postgres:
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-2. Aplicar esquema relacional (campañas, mundos, sesiones, etc.):
+Después aplica migraciones desde la raíz:
 
 ```bash
 alembic upgrade head
 ```
 
-Ejecutar **desde la raíz del repo**, con el venv activado y `POSTGRES_URL` definida.
+### 5) Ejecución en local
 
----
-
-## Ingesta de PDFs (RAG)
-
-1. Coloca los **PDF** en `backend/data/` (también en subcarpetas; la búsqueda es recursiva).
-2. Con `POSTGRES_URL` configurada y una **clave OpenAI** guardada en **Ajustes** (para embeddings), ejecuta desde la raíz:
-
-**Todos los PDFs bajo `backend/data/`:**
+#### Backend
 
 ```bash
-python -m backend.scripts.ingest_pdf
-```
-
-**Un solo archivo:**
-
-```bash
-python -m backend.scripts.ingest_pdf --pdf backend/data/manual.pdf
-```
-
-**Misma colección de manuales que la aplicación web** (recomendado para **Consultas → Reglas**): usa el UUID de tu usuario (véase **Ajustes** / `GET /api/auth/me`) con `--owner-id`:
-
-```bash
-python -m backend.scripts.ingest_pdf --pdf backend/data/manual.pdf --owner-id xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-```
-
-Sin `--owner-id`, el script usa `RAG_COLLECTION` (p. ej. `rules_5e`), **distinta** de la colección de manuales por usuario (`rag_u_<hex>_manuals`), y las consultas desde la UI en modo **Reglas** no verán esos documentos.
-
-**Script alternativo** (`ingest_pdfs`) para varias rutas o otro directorio:
-
-```bash
-python -m backend.scripts.ingest_pdfs --dir backend/data
-```
-
-- Los PDFs nuevos **se añaden** al índice sin borrar los existentes.
-- El manifiesto local (`backend/storage/ingest_manifest.json`) evita re-embeddings innecesarios, pero si vacías Postgres o recreas las tablas vectoriales, la ingesta **vuelve a ejecutarse** al detectar que ya no hay fragmentos en la colección.
-- Reingestar el **mismo** PDF (misma ruta) no duplica chunks salvo que el archivo cambie o uses `--force`.
-- **`--force`**: reindexa agresivamente; en escenarios con un solo PDF puede recrear la colección de ese documento. Si cambias el modelo de embeddings, conviene reindexar con coherencia (p. ej. `--force` o limpieza acorde).
-
----
-
-## Ejecución
-
-### Backend (API)
-
-**Siempre desde la raíz del repositorio:**
-
-```bash
-# Windows
-.venv\Scripts\uvicorn backend.app.main:app --reload
-
-# Linux / macOS
 uvicorn backend.app.main:app --reload
 ```
 
-Por defecto la API queda en **http://127.0.0.1:8000**.
+Endpoints útiles:
 
-La **indexación RAG** (cola de manuales subidos desde la UI) la procesa uno o más **workers** que, por defecto (**`INGEST_WORKER_AUTOSTART=true`**, **`INGEST_WORKER_COUNT=1`**), **uvicorn arranca** al levantar la API. Puedes subir el paralelismo con `INGEST_WORKER_COUNT` (p. ej. `3`). No necesitas una segunda terminal salvo que desactives el autostart (`INGEST_WORKER_AUTOSTART=false`) y entonces ejecutes a mano:
+- `http://127.0.0.1:8000/health`
+- `http://127.0.0.1:8000/health/ready`
+- `http://127.0.0.1:8000/docs`
+- `http://127.0.0.1:8000/admin`
 
-```bash
-python -m backend.scripts.ingest_worker
-```
+#### Frontend
 
-En **Docker Compose**, el servicio `ingest-worker` ya corre el worker; el contenedor del API lleva `INGEST_WORKER_AUTOSTART=false` para no duplicar procesos.
-
-Al **arrancar**, el worker pasa de nuevo a «En cola» los trabajos que quedaron en «Procesando» (reinicio o corte), para reintentar la indexación.
-
-- **Salud:** `GET http://127.0.0.1:8000/health`
-- **Documentación interactiva:** `http://127.0.0.1:8000/docs` (OpenAPI/Swagger de FastAPI)
-- **Página servida en `/`:** `frontend/index.html` (entrada HTML de la app React; en producción conviene servir el **build** de Vite o seguir usando el dev server con proxy)
-- **Admin mínimo:** `http://127.0.0.1:8000/admin`
-
-### Frontend React (desarrollo)
-
-En **otra terminal**, con el backend en marcha:
+En otra terminal:
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-Abre la URL que indique Vite (habitualmente **http://127.0.0.1:5173**). El proxy de **`frontend/vite.config.ts`** enruta `/api` al backend en el puerto 8000.
+Vite normalmente arranca en `http://127.0.0.1:5173` y redirige `/api` al backend.
 
-### Probar RAG por HTTP
+### 6) Ingesta RAG de documentos
 
-En PowerShell, para evitar el alias de `curl`:
+Puedes cargar documentos de dos maneras:
 
-```powershell
-curl.exe -s -X POST http://127.0.0.1:8000/api/query_rules `
-  -H "Content-Type: application/json" `
-  -d "{\"question\":\"¿Qué es una tirada de salvación?\"}"
+- por UI (`/documentos`) para cola asíncrona;
+- por CLI (scripts de ingesta).
+
+Ejemplos CLI:
+
+```bash
+python -m backend.scripts.ingest_pdf --pdf backend/data/manual.pdf
+python -m backend.scripts.ingest_pdfs --dir backend/data
 ```
 
----
+Para compartir colección con un usuario concreto:
 
-## Docker Compose
+```bash
+python -m backend.scripts.ingest_pdf --pdf backend/data/manual.pdf --owner-id <uuid_usuario>
+```
 
-Despliegue con **cuatro servicios**: Postgres (**pgvector**), API FastAPI, **worker de ingesta RAG** (`ingest-worker`, mismo código que el backend) y frontend estático (**Nginx**) que enruta `/api` y `/admin` al backend (mismo comportamiento que el proxy de Vite en desarrollo).
+#### Nota importante sobre workers
 
-**Requisitos:** [Docker](https://docs.docker.com/get-docker/) y Docker Compose v2.
+- En local, por defecto el backend puede lanzar workers (`INGEST_WORKER_AUTOSTART=true`).
+- En Compose, existe servicio dedicado `ingest-worker`, y el backend lleva `INGEST_WORKER_AUTOSTART=false` para evitar duplicidades.
 
-1. Copia `.env.example` a `.env` y completa al menos **`JWT_SECRET`** (y el resto de variables que uses; opcionalmente `ADMIN_USERNAME` / `ADMIN_PASSWORD`). Si no defines credenciales de administrador en el entorno, configura **`SETUP_MASTER_PASSWORD`** (obligatorio para arrancar sin admin en BD) y completa la **instalación inicial** en la ruta `/setup` de la aplicación. El fichero **`.env`** debe existir para que Compose pueda cargarlo en los servicios `backend` e `ingest-worker`. Las claves de **OpenAI** y **Hugging Face** se configuran en la aplicación (**Ajustes**), no en el entorno.
-2. **`POSTGRES_URL` dentro del contenedor** la fija `docker-compose.yml` apuntando al servicio `db` (`dndhelper` / `dndhelper` / base `dndhelper`). La variable de tu `.env` para Postgres **se sustituye** en Compose al arrancar el backend y el worker.
-3. Construcción y arranque:
+### 7) Ejecución con Docker Compose
+
+1. Revisa `.env` (incluye `JWT_SECRET`; y si no hay admin creado, define `SETUP_MASTER_PASSWORD`).
+2. Levanta servicios:
 
 ```bash
 docker compose up -d --build
 ```
 
-4. **Migraciones:** el contenedor del API ejecuta `alembic upgrade head` al arrancar (tras esperar a Postgres). Solo necesitas el paso manual `docker compose run --rm backend alembic upgrade head` si quieres aplicar migraciones sin levantar el servicio.
+URLs habituales:
 
-5. **URLs habituales**
-   - App React (vía Nginx): **http://localhost:80** (si el puerto 80 está ocupado o requiere permisos elevados en tu sistema, cambia en `docker-compose.yml` el mapeo del servicio `frontend`, p. ej. `8080:80`).
-   - API directa (opcional): **http://localhost:8000** (`/docs`, `/health`).
-   - Postgres en el host: **localhost:5432** (usuario/contraseña/base `dndhelper`).
+- Frontend (Nginx): `http://localhost:80`
+- Backend API: `http://localhost:8000`
+- PostgreSQL: `localhost:5432`
 
-Los PDFs para RAG pueden dejarse en **`backend/data/`** en el host: el compose monta esa carpeta en el contenedor del backend **y** del worker (subidas desde la UI y manifiestos de ingesta). Las **imágenes de mundos** (y el resto de ficheros bajo `backend/storage/`, p. ej. `world_images/`) también se persisten mediante el volumen **`./backend/storage` → `/app/backend/storage`**.
+Servicios principales en Compose:
 
-Los **embeddings** (vectores) se almacenan **solo en PostgreSQL** (pgvector). `backend/storage/` no es una base vectorial: ahí van manifiestos JSON de ingesta y ficheros de imágenes, no embeddings.
+- `db` (pgvector/pg16),
+- `backend`,
+- `ingest-worker`,
+- `frontend` (nginx con `BACKEND_UPSTREAM`).
 
-La subida desde **Documentos** encola un trabajo en BD; el proceso **`ingest-worker`** (`python -m backend.scripts.ingest_worker`) lo toma y actualiza el porcentaje de progreso. Sin ese servicio (o sin ejecutar el worker en local), los trabajos quedarán en «En cola». Cada vez que el worker **arranca**, recupera trabajos que hubieran quedado en «Procesando» y los vuelve a encolar.
+Perfiles opcionales:
 
-La imagen del backend es **grande** (PyTorch / `sentence-transformers`). En Compose se fuerza **`EMBEDDINGS_DEVICE=cpu`**; para GPU haría falta configurar el runtime de NVIDIA y una imagen base distinta.
+- `test` para pytest en contenedor.
+- `e2e` para Playwright en contenedor.
 
-**Paridad con Kubernetes:** se usan las mismas imágenes y entrypoints (`docker-entrypoint.sh` con espera a Postgres + `alembic upgrade head` + uvicorn; `docker-entrypoint-worker.sh` con la misma espera, `alembic upgrade head` idempotente y el worker de ingesta). Variables alineadas: `POSTGRES_URL`, `EMBEDDINGS_DEVICE`, `INGEST_WORKER_AUTOSTART=false`, `SETUP_MASTER_PASSWORD` (API y worker), Nginx con `BACKEND_UPSTREAM` al host del API. El **frontend** y el **ingest-worker** esperan a que el **backend** esté sano (`healthcheck` sobre `GET /health`), equivalente a desplegar el API antes de asumir tráfico o trabajo de cola.
+### 8) Despliegue Kubernetes (referencia)
 
-### Kubernetes
+Hay un manifiesto completo en `deploy/k8s/all-in-one.yaml` con:
 
-Manifiesto de ejemplo (Postgres con pgvector, `Deployment` del API, `Deployment` separado para `ingest-worker`, PVCs para datos, frontend Nginx): [`deploy/k8s/all-in-one.yaml`](deploy/k8s/all-in-one.yaml).
+- Secret de aplicación y base de datos;
+- StatefulSet + Service de PostgreSQL;
+- Deployment + Service del backend;
+- Deployment separado para `ingest-worker`;
+- Deployment + Service de frontend.
 
-1. Construye las imágenes (`docker build -f backend/Dockerfile -t dndhelper-backend:latest .` y `docker build -f frontend/Dockerfile -t dndhelper-frontend:latest ./frontend`) y súbelas a tu registry si no usas imágenes locales.
-2. Edita el `Secret` `dndhelper-secrets` (contraseñas y `POSTGRES_URL` coherentes con el usuario de Postgres).
-3. Despliega: `kubectl apply -f deploy/k8s/all-in-one.yaml`
+Flujo básico:
 
-Scripts de comprobación de salud reutilizables: [`scripts/healthcheck-postgres.sh`](scripts/healthcheck-postgres.sh), [`scripts/healthcheck-backend.sh`](scripts/healthcheck-backend.sh), [`scripts/healthcheck-nginx.sh`](scripts/healthcheck-nginx.sh). El worker puede usar `python -m backend.scripts.health_ingest`.
-
----
-
-## Estructura del proyecto
-
-```text
-dndhelper/
-├── .env.example              # Plantilla de variables de entorno
-├── docker-compose.yml        # Postgres + backend + ingest-worker + frontend (Nginx)
-├── deploy/k8s/               # Manifiesto Kubernetes (ej. all-in-one.yaml)
-├── alembic.ini               # Configuración de Alembic
-├── alembic/                  # Migraciones SQL (versiones en versions/)
-├── requirements.txt          # Dependencias Python
-├── scripts/
-│   ├── test.ps1              # Tests (Windows)
-│   └── test.sh               # Tests (Unix)
-├── backend/
-│   ├── Dockerfile            # Imagen de la API (contexto de build: raíz del repo)
-│   ├── app/
-│   │   ├── main.py           # FastAPI: rutas, montaje de routers, /, /admin, /health
-│   │   ├── config.py         # Settings desde entorno
-│   │   ├── db.py             # Sesión SQLAlchemy
-│   │   ├── models.py         # ORM: worlds, campaigns, sessions, …
-│   │   ├── schemas.py        # Esquemas Pydantic
-│   │   ├── crud.py           # Operaciones de persistencia
-│   │   ├── embeddings.py     # Embeddings (OpenAI)
-│   │   ├── vector_store.py   # PGVector / LangChain
-│   │   ├── ingest.py         # Lógica de ingesta de PDFs
-│   │   ├── rag.py            # Utilidades RAG (si aplica)
-│   │   ├── api/              # Routers: rag, campaigns, sessions, worlds
-│   │   ├── services/         # RAG, generación de campaña/mundo, imágenes
-│   │   └── prompts/          # Carga y composición de prompts
-│   ├── admin_ui/             # UI estática bajo /admin
-│   ├── data/                 # PDFs para indexar (no versionar contenido propietario)
-│   ├── prompt_templates/     # Plantillas de texto (RAG, campaña, sesiones, imágenes, …)
-│   ├── scripts/              # ingest_pdf, ingest_pdfs, ingest_worker (cola RAG)
-│   └── storage/              # Manifiestos JSON, imágenes de mundos (vectores en Postgres/pgvector)
-└── frontend/
-    ├── Dockerfile            # Build Vite + Nginx (proxy /api y /admin → backend)
-    ├── nginx.docker.conf     # Configuración Nginx del contenedor frontend
-    ├── index.html            # Shell de la SPA
-    ├── vite.config.ts        # Dev: proxy /api → http://127.0.0.1:8000
-    ├── package.json
-    └── src/
-        ├── main.tsx          # Router y entrada React
-        ├── lib/api.ts        # Cliente HTTP hacia /api
-        ├── pages/            # Campañas, detalle, mundos, …
-        └── components/       # Layout, wizard, diálogos, …
-```
-
----
-
-## Funcionalidades principales
-
-### Consultas RAG
-
-- Endpoint **`POST /api/query_rules`**: cuerpo JSON con **`question`**, **`scope`** (`rules` \| `campaigns_general` \| `campaign`) y, si `scope` es `campaign`, **`campaign_id`**. Respuesta **`answer`** y **`sources`** (fragmentos de recuperación semántica).
-- Modo **Reglas**: índice de manuales. **Campañas en general** / **campaña concreta**: índice de referencias de campaña; en el modo campaña se añade además el texto completo de la campaña (brief, historia, outline, sesiones, mundo) como contexto.
-- Para **Reglas** hacen falta documentos ingestados en la colección de manuales.
-
-### Campañas
-
-- CRUD vía API (`POST/GET/PATCH/DELETE` bajo `/api/campaigns`).
-- **Brief** (borrador y aprobación; la aprobación del brief consolida también la **historia** en `story_final`), **outline** (borrador y aprobación).
-- Asociación opcional a un **mundo** (`world_id`).
-
-### Mundos
-
-- Generación y edición de mundos (texto en borrador / final, tono, temas en JSON).
-- **Activos visuales** (`visual_assets`): plantilla con huecos; la generación de cada imagen es **explícita** (endpoint de generación bajo `/api/worlds/...`), no automática al crear el mundo.
-- Servicio de ficheros de imagen expuesto por la API para visualización en el cliente.
-
-### Sesiones
-
-- Generación por campaña (`sessions:generate` con número de sesiones).
-- Listado por campaña o listado global del propietario (`all-sessions` con paginación).
-- Edición de borradores, **aprobación**, **reapertura** a borrador y borrado.
-
-### Interfaz de usuario
-
-- **React**: flujo principal en `/campaigns`, `/worlds`, `/consultas` (consultas RAG; `/rules` redirige aquí), `/documentos` (subida de documentos al índice RAG; elige colección manuales o referencias de campaña; `/manuals` redirige aquí), **Ajustes** en `/settings` (claves OpenAI y Hugging Face), etc. (ver `frontend/src/main.tsx`).
-- **Admin** en `/admin`: interfaz mínima servida por FastAPI.
-
-### Usuarios y aislamiento
-
-- Registro e inicio de sesión: la UI usa `/register` y `/login`; la API expone `POST /api/auth/register`, `POST /api/auth/login` y `GET /api/auth/me`.
-- **Administrador:** si defines `ADMIN_USERNAME` y `ADMIN_PASSWORD` en `.env`, al arrancar la API se crea un usuario con `is_admin=true` que puede listar y operar sobre **cualquier** recurso (campañas, mundos, trabajos RAG, etc.). En rutas RAG, el admin puede indicar el propietario objetivo en el cuerpo o formulario (`target_owner_id`, `for_owner_id`).
-- Las tablas de dominio usan `owner_id` = `users.id`. Los PDFs subidos van a `backend/data/uploads/<owner_id>/`.
-- El índice RAG (pgvector) es **por usuario**: colección `rag_u_<uuid sin guiones>`; las consultas en **Reglas** solo buscan en la colección del usuario autenticado (salvo admin con `target_owner_id`).
-
----
-
-## Tests
-
-Los tests usan una base **dedicada**; define `POSTGRES_TEST_URL` y ejecuta:
-
-**Windows (PowerShell):**
-
-```powershell
-$env:POSTGRES_TEST_URL="postgresql+psycopg://user:pass@host:5432/db_test"
-./scripts/test.ps1 -Quiet
-```
-
-**Linux / macOS:**
+1. Ajusta credenciales/URLs del Secret.
+2. Publica imágenes o usa imágenes accesibles en tu clúster.
+3. Aplica el manifiesto:
 
 ```bash
-export POSTGRES_TEST_URL="postgresql+psycopg://user:pass@host:5432/db_test"
+kubectl apply -f deploy/k8s/all-in-one.yaml
+```
+
+### 9) Pruebas
+
+#### Backend (pytest)
+
+```bash
 ./scripts/test.sh
 ```
 
-**Docker Compose (solo pytest):** el servicio `test` usa la misma imagen que el backend, crea la BD `dndhelper_test` en Postgres si no existe y ejecuta Alembic + tests. Requiere perfil `test` (no se levanta con `docker compose up` solo).
+o en Windows:
 
-```bash
-docker compose up -d db
-docker compose --profile test build test   # primera vez o tras cambiar el Dockerfile
-docker compose --profile test run --rm test
+```powershell
+./scripts/test.ps1
 ```
 
-Argumentos extra para pytest (tras el nombre del servicio):
+#### Suite completa (pytest + E2E)
 
 ```bash
-docker compose --profile test run --rm test backend/tests/unit -v
+./scripts/test-all.sh
 ```
 
-**Todo junto (pytest + Playwright):** con la API en marcha para la parte E2E, desde la raíz del repo:
+o en Windows:
 
-- **Windows (PowerShell):** `./scripts/test-all.ps1`
-- **Linux / macOS:** `./scripts/test-all.sh`
-
-Solo pytest: `./scripts/test-all.ps1 -SkipE2E` o `SKIP_E2E=1 ./scripts/test-all.sh`. Solo E2E: `-SkipBackend` / `SKIP_BACKEND=1`.
-
-### Tests E2E (Playwright, frontend)
-
-Pruebas en navegador bajo `frontend/e2e/`: rutas React, token en `localStorage`, proxy `/api` de Vite y flujos de UI que no cubre `TestClient`.
-
-**Requisitos:** Node.js, backend FastAPI y PostgreSQL en marcha (p. ej. `uvicorn` en `127.0.0.1:8000`, igual que el proxy de `frontend/vite.config.ts`). Instala los navegadores de Playwright una vez:
-
-```bash
-cd frontend
-npm install
-npx playwright install chromium
+```powershell
+./scripts/test-all.ps1
 ```
 
-**Ejecución recomendada (dos terminales):**
-
-1. Terminal A: base de datos + API (misma `POSTGRES_URL` que uses en desarrollo).
-2. Terminal B:
-
-```bash
-cd frontend
-npm run test:e2e
-```
-
-Playwright arranca **solo** el servidor de Vite (`npm run dev`) si no hay uno escuchando ya en la URL base. La API **no** la levanta el runner.
-
-**Docker Compose (E2E sin Node en el host):** servicio `e2e` (imagen oficial `mcr.microsoft.com/playwright`, perfil `e2e`). El navegador abre `http://frontend:80` (nginx sirve el build y hace proxy de `/api` al backend). No hace falta Vite en el contenedor (`PLAYWRIGHT_DOCKER=1`).
-
-```bash
-docker compose --profile e2e run --rm e2e
-```
-
-(En **Compose v2**, suele arrancar `db`, `backend` y `frontend` si hacen falta. Si no, `docker compose up -d db backend frontend` antes.)
-
-Argumentos extra para Playwright:
-
-```bash
-docker compose --profile e2e run --rm e2e -- --grep "solo mundos"
-```
-
-Claves opcionales (p. ej. test largo con IA): define `E2E_OPENAI_API_KEY` o `OPENAI_API_KEY` en `.env` o expórtalas al ejecutar. La contraseña maestra de setup se alinea con `SETUP_MASTER_PASSWORD` del backend vía `E2E_SETUP_MASTER_PASSWORD` en el servicio.
-
-La etiqueta de la imagen Playwright conviene alinearla con la versión resuelta de `@playwright/test` en `frontend/package-lock.json` (p. ej. `v1.58.2-noble`).
-
-El servicio monta además `./backend/storage` en `/backend/storage` para que los tests que escriben PNGs de mundo (`writeWorldImageFile`) compartan disco con el contenedor del backend (`/app/backend/storage`).
-
-**Variables útiles:**
-
-| Variable | Descripción |
-|----------|-------------|
-| `PLAYWRIGHT_BASE_URL` | URL del frontend (por defecto `http://127.0.0.1:5173`). |
-| `OPENAI_API_KEY` o `E2E_OPENAI_API_KEY` | Opcional pero necesaria para el spec largo de campaña: el test guarda la clave en **Ajustes** del usuario vía API y usa el brief con IA. Sin ella, ese caso se omite (`test.skip`). |
-| `CI` | Si está definida, Playwright no reutiliza un `vite dev` ya arrancado y activa reintentos ligeros. |
-
-**Scripts npm:** `npm run test:e2e` · `npm run test:e2e:ui`
-
-**CI (opcional):** un job reproducible suele combinar Postgres (p. ej. imagen `pgvector/pgvector`), migraciones Alembic, `uvicorn`, `npm run build` + `vite preview` y `npm run test:e2e`, con `PLAYWRIGHT_BASE_URL` apuntando al preview y el proxy de `/api` coherente con el host del backend. Puedes usar `docker compose up` como base y ejecutar Playwright en el host o en un contenedor con Node.
+También puedes usar Compose con perfiles `test`/`e2e`.
 
 ---
 
-## API y referencia rápida
+## d. Estructura del proyecto
 
-### Autenticación
-
-- `POST /api/auth/register` — cuerpo `{"username": "...", "password": "..."}`; crea usuario (contraseña con hash bcrypt) y devuelve `access_token` + datos públicos del usuario.
-- `POST /api/auth/login` — mismo cuerpo; devuelve token si las credenciales son válidas.
-- `GET /api/auth/me` — requiere `Authorization: Bearer <token>`; devuelve `id`, `username` e `is_admin`.
-
-### Ajustes (claves por usuario)
-
-- `GET /api/settings` — estado (`has_stored_openai_key`; no se devuelven secretos).
-- `PUT /api/settings/openai` — cuerpo `{"openai_api_key": "sk-..."}`; persiste para el usuario autenticado.
-- `DELETE /api/settings/openai` — borra la clave OpenAI guardada en BD.
-
-### RAG
-
-- `POST /api/query_rules` — Cuerpo `question`, `scope` (`rules` \| `campaigns_general` \| `campaign`), opcional `campaign_id` si `scope=campaign`, opcional `target_owner_id` (admin). Las subidas van al índice de **manuales**; las referencias de campaña se reindexan al consultar (y desde la generación de contenido).
-- `POST /api/upload_pdf` — Subida multipart: campo **`rag_target`** (`manuals` \| `campaign`), **`files`** repetido (uno o más documentos PDF, TXT o DOCX); guarda en `backend/data/uploads/<user_id>/`, crea una fila en `ingest_jobs` por fichero (con la colección destino en `collection_name`) y responde **202** con `{ "queued": [...], "errors": [...] }`. El campo `file` (singular) sigue admitido por compatibilidad. La indexación la hace el worker en la colección elegida (**manuales** o **referencias de campaña**).
-- `GET /api/ingest_jobs?limit=50` — Lista de trabajos del propietario: `status` (`queued` | `processing` | `done` | `failed`), `progress_percent`, `phase_label`, y al terminar `outcome` (`indexed` | `unchanged` | `empty`), `message`, metadatos.
-- `POST /api/rag/clear` — Cuerpo `{"targets": ["manuals", "campaign"]}` (uno o ambos); opcional `target_owner_id` (admin). Borra la(s) colección(es) PGVector, trabajos de ingesta asociados, ficheros en `uploads/<usuario>/` y manifiestos locales (`ingest_manifest.json`, `campaign_rag_meta.json` para las campañas del usuario).
-
-### Campañas (extracto)
-
-- `POST /api/campaigns`, `GET /api/campaigns`, `GET /api/campaigns/{id}`, `PATCH`, `DELETE`
-- Brief: `POST` o `PATCH .../brief`, `POST .../brief/approve` — al aprobar el brief se fija también la **historia** (`story_final` a partir de `story_draft`, generándola si hace falta)
-- Historia en borrador: `PATCH .../story`, `POST .../story/reset`; reabrir campaña: `POST .../reopen`
-- Outline: `POST .../outline:generate`, `PATCH .../outline`, `POST .../outline/approve`
-- Wizard asistido: `POST /api/campaigns:wizard/autogenerate`
-
-### Mundos
-
-- Generación: `POST /api/campaigns/{campaign_id}/world:generate`
-- `GET/PATCH /api/worlds/{id}`, `POST .../approve`
-- Imágenes: generación bajo demanda y lectura de ficheros (rutas en el router `worlds`)
-
-### Sesiones
-
-- `POST /api/campaigns/{campaign_id}/sessions:generate?session_count=N`
-- `GET /api/campaigns/{campaign_id}/sessions`
-- `GET /api/all-sessions` o `GET /api/sessions` (listados con `limit` / `offset`)
-- `GET /api/sessions/{session_id}`, `PATCH`, `POST .../approve`, `POST .../reopen`, `DELETE`
-
-> **Nota:** Evita rutas ambiguas; por ejemplo no uses un path tipo `/api/sessions/list` que pueda confundirse con `/api/sessions/{session_id}`.
-
-Los **prompts** de plantilla viven en `backend/prompt_templates/` y se renderizan con el mismo mecanismo que el resto de la aplicación (`render_prompt_template`).
+```text
+dndhelper/
+├── README.md
+├── .env.example
+├── requirements.txt
+├── requirements-dev.txt
+├── alembic.ini
+├── docker-compose.yml
+├── alembic/
+│   └── versions/
+├── backend/
+│   ├── Dockerfile
+│   ├── docker-entrypoint.sh
+│   ├── docker-entrypoint-worker.sh
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── config.py
+│   │   ├── db.py
+│   │   ├── models.py
+│   │   ├── schemas.py
+│   │   ├── crud.py
+│   │   ├── api/
+│   │   │   ├── auth.py
+│   │   │   ├── campaigns.py
+│   │   │   ├── rag.py
+│   │   │   ├── sessions.py
+│   │   │   ├── settings.py
+│   │   │   ├── setup.py
+│   │   │   └── worlds.py
+│   │   └── services/
+│   ├── scripts/
+│   │   ├── ingest_pdf.py
+│   │   ├── ingest_pdfs.py
+│   │   ├── ingest_worker.py
+│   │   └── health_ingest.py
+│   ├── admin_ui/
+│   ├── data/
+│   ├── prompt_templates/
+│   └── storage/
+├── frontend/
+│   ├── Dockerfile
+│   ├── Dockerfile.e2e
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── nginx.docker.conf
+│   └── src/
+│       ├── main.tsx
+│       ├── App.tsx
+│       ├── router.tsx
+│       ├── components/
+│       └── pages/
+├── deploy/
+│   └── k8s/
+│       └── all-in-one.yaml
+└── scripts/
+    ├── test.sh
+    ├── test.ps1
+    ├── test-all.sh
+    ├── test-all.ps1
+    ├── docker-test-entrypoint.sh
+    ├── healthcheck-backend.sh
+    ├── healthcheck-postgres.sh
+    └── healthcheck-nginx.sh
+```
 
 ---
 
-## Licencia y uso
+## e. Funcionalidades principales
 
-Usa el repositorio según la licencia del proyecto (si no hay archivo `LICENSE`, acláralo con los mantenedores). El contenido de los PDFs de D&D puede estar sujeto a derechos de autor de sus editores; la ingesta es responsabilidad de quien despliega la herramienta.
+### 1) Autenticación y control de acceso
+
+- Registro e inicio de sesión por JWT.
+- Resolución de contexto de usuario en la API.
+- Rol administrador con capacidad de operación transversal.
+- Flujo de instalación inicial (`/setup`) cuando no hay admin precreado.
+
+### 2) Gestión de campañas
+
+- CRUD de campañas.
+- Generación y aprobación de brief, historia y outline.
+- Vínculo opcional de campaña con mundo.
+- Reapertura de estado de trabajo cuando se quiere iterar.
+
+### 3) Gestión de mundos
+
+- Generación/edición de mundos con campos en borrador y final.
+- Definición de temas y tono.
+- Generación bajo demanda de activos visuales (según configuración).
+
+### 4) Gestión de sesiones
+
+- Generación de múltiples sesiones por campaña.
+- Listados por campaña y listados globales paginados.
+- Ciclo de edición/aprobación/reapertura.
+
+### 5) Consultas RAG y documentos
+
+- Endpoint de consulta principal: `POST /api/query_rules`.
+- Tres alcances de consulta (`rules`, `campaigns_general`, `campaign`).
+- Subida de documentos a cola de ingesta (`/api/upload_pdf`) con soporte PDF/TXT/DOCX.
+- Limpieza de índices/recursos por objetivo (`/api/rag/clear`).
+
+### 6) Operación y observabilidad básica
+
+- Endpoints de salud (`/health`, `/health/ready`).
+- Documentación OpenAPI en `/docs`.
+- Worker de ingesta desacoplable para escalar o separar carga.
+
+---
+
+Si vas a desplegar en producción, revisa especialmente secretos (`JWT_SECRET`, contraseñas DB, `SETUP_MASTER_PASSWORD`), políticas de red y persistencia de volúmenes.
