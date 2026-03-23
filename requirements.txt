@@ -4,10 +4,8 @@ python-multipart
 pydantic
 python-dotenv
 
-langchain
 langchain-core
 langchain-community
-langchain-huggingface
 langchain-openai
 langchain-text-splitters
 
@@ -22,7 +20,4 @@ bcrypt
 PyJWT
 tqdm
 
-sentence-transformers
-
-pytest
 httpx

@@ -265,7 +265,7 @@ La imagen del backend es **grande** (PyTorch / `sentence-transformers`). En Comp
 
 ### Kubernetes
 
-Manifiesto de ejemplo (Postgres con pgvector, API + worker en un solo `Deployment`, PVCs para datos, frontend Nginx): [`deploy/k8s/all-in-one.yaml`](deploy/k8s/all-in-one.yaml).
+Manifiesto de ejemplo (Postgres con pgvector, `Deployment` del API, `Deployment` separado para `ingest-worker`, PVCs para datos, frontend Nginx): [`deploy/k8s/all-in-one.yaml`](deploy/k8s/all-in-one.yaml).
 
 1. Construye las imágenes (`docker build -f backend/Dockerfile -t dndhelper-backend:latest .` y `docker build -f frontend/Dockerfile -t dndhelper-frontend:latest ./frontend`) y súbelas a tu registry si no usas imágenes locales.
 2. Edita el `Secret` `dndhelper-secrets` (contraseñas y `POSTGRES_URL` coherentes con el usuario de Postgres).

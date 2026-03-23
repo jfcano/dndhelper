@@ -16,6 +16,9 @@ extradata/
 # Variables de entorno (claves secretas)
 .env
 
+# Scripts locales para publicar imágenes (no hace falta versionarlos)
+scripts/dockerhub-build-push.sh
+
 # Archivos del sistema/editor
 .DS_Store
 .vscode/

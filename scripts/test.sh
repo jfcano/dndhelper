@@ -34,7 +34,7 @@ if [[ -z "${POSTGRES_TEST_URL:-}" ]]; then
 fi
 
 if [[ ! -x ".venv/bin/python" && ! -x ".venv/Scripts/python.exe" ]]; then
-  echo "No encuentro .venv. Crea el venv e instala requirements.txt"
+  echo "No encuentro .venv. Crea el venv e instala requirements-dev.txt"
   exit 1
 fi
 

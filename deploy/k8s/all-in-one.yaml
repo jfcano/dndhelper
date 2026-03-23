@@ -1,10 +1,8 @@
-# Despliegue completo en un solo archivo. El worker usa la misma imagen/entrypoint que en
-# docker-compose: espera a Postgres, alembic upgrade head (idempotente), ingest_worker.
+# Despliegue completo en un solo archivo. Paridad con docker-compose:
+# Postgres + backend + ingest-worker (Deployment separado) + frontend.
 # Antes de aplicar:
-# 1) Construye y etiqueta las imágenes (contexto raíz del repo para backend):
-#    docker build -f backend/Dockerfile -t dndhelper-backend:latest .
-#    docker build -f frontend/Dockerfile -t dndhelper-frontend:latest ./frontend
-# 2) Edita el Secret dndhelper-secrets: contraseñas y POSTGRES_URL coherentes con POSTGRES_USER/PASSWORD.
+# 1) Edita el Secret dndhelper-secrets: contraseñas y POSTGRES_URL coherentes con POSTGRES_USER/PASSWORD.
+# 2) (Opcional) Cambia el tag de imagen si no quieres `latest`.
 # 3) kubectl apply -f deploy/k8s/all-in-one.yaml
 ---
 apiVersion: v1
@@ -179,7 +177,7 @@ spec:
                   key: POSTGRES_PASSWORD
       containers:
         - name: api
-          image: dndhelper-backend:latest
+          image: yanferstime/dndhelper-backend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
@@ -222,8 +220,57 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
+      volumes:
+        - name: app-data
+          persistentVolumeClaim:
+            claimName: dndhelper-app-data
+        - name: app-storage
+          persistentVolumeClaim:
+            claimName: dndhelper-app-storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dndhelper-backend
+  namespace: dndhelper
+spec:
+  selector:
+    app: dndhelper-backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dndhelper-ingest-worker
+  namespace: dndhelper
+  labels:
+    app: dndhelper-ingest-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dndhelper-ingest-worker
+  template:
+    metadata:
+      labels:
+        app: dndhelper-ingest-worker
+    spec:
+      initContainers:
+        - name: wait-for-backend
+          image: curlimages/curl:8.12.1
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until curl -fsS http://dndhelper-backend:8000/health >/dev/null; do
+                echo "Esperando a backend /health..."
+                sleep 2
+              done
+      containers:
         - name: ingest-worker
-          image: dndhelper-backend:latest
+          image: yanferstime/dndhelper-backend:latest
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/docker-entrypoint-worker.sh"]
           env:
@@ -277,18 +324,6 @@ spec:
           persistentVolumeClaim:
             claimName: dndhelper-app-storage
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: dndhelper-backend
-  namespace: dndhelper
-spec:
-  selector:
-    app: dndhelper-backend
-  ports:
-    - port: 8000
-      targetPort: 8000
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -306,9 +341,20 @@ spec:
       labels:
         app: dndhelper-frontend
     spec:
+      initContainers:
+        - name: wait-for-backend
+          image: curlimages/curl:8.12.1
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until curl -fsS http://dndhelper-backend:8000/health >/dev/null; do
+                echo "Esperando a backend /health..."
+                sleep 2
+              done
       containers:
         - name: nginx
-          image: dndhelper-frontend:latest
+          image: yanferstime/dndhelper-frontend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80

@@ -36,7 +36,7 @@ if (-not $env:POSTGRES_TEST_URL) {
 }
 
 if (-not (Test-Path ".venv\Scripts\python.exe")) {
-  Write-Host "No encuentro .venv. Crea el venv e instala requirements.txt" -ForegroundColor Yellow
+  Write-Host "No encuentro .venv. Crea el venv e instala requirements-dev.txt" -ForegroundColor Yellow
   exit 1
 }
 

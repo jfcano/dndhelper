@@ -5,9 +5,6 @@ import * as path from 'node:path'
 
 export const E2E_PASSWORD = 'E2e_test_pw_12'
 
-/** Debe coincidir con SETUP_MASTER_PASSWORD del backend en entornos sin ADMIN_* (p. ej. compose por defecto). */
-const DEFAULT_SETUP_MASTER = 'local-dev-setup-master'
-
 /**
  * Si la API aún no tiene administrador, ejecuta POST /api/setup/ (contraseña maestra desde env).
  */
@@ -16,12 +13,16 @@ export async function ensureInstallationDone(request: APIRequestContext) {
   if (!st.ok()) return
   const j = (await st.json()) as { needs_setup: boolean; setup_available: boolean }
   if (!j.needs_setup) return
-  const master = process.env.E2E_SETUP_MASTER_PASSWORD ?? DEFAULT_SETUP_MASTER
+  const master = process.env.E2E_SETUP_MASTER_PASSWORD?.trim()
+  expect(
+    !!master,
+    'Falta E2E_SETUP_MASTER_PASSWORD para bootstrap de /api/setup cuando needs_setup=true.',
+  ).toBeTruthy()
   const username = process.env.E2E_ADMIN_USERNAME ?? 'e2e_admin'
   const password = process.env.E2E_ADMIN_PASSWORD ?? 'E2e_admin_pw_12'
   const res = await request.post('/api/setup/', {
     data: {
-      master_password: master,
+      master_password: master!,
       username,
       password,
     },
@@ -113,7 +114,9 @@ export async function putOpenAiKeyForUser(request: APIRequestContext, token: str
  * En Docker Compose (servicio `e2e`), monta `./backend/storage` en `/backend/storage` para que el backend vea el mismo fichero.
  */
 export function writeWorldImageFile(worldId: string, filename: string, bytes: Buffer = MIN_PNG) {
-  const dir = path.resolve(process.cwd(), '..', 'backend', 'storage', 'world_images', worldId)
+  const storageBase =
+    process.env.E2E_BACKEND_STORAGE_DIR?.trim() || path.resolve(process.cwd(), '..', 'backend', 'storage')
+  const dir = path.resolve(storageBase, 'world_images', worldId)
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, filename), bytes)
 }

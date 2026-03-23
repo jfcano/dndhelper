@@ -16,21 +16,19 @@ services:
       retries: 5
 
   backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    image: yanferstime/dndhelper-backend:${DNDHELPER_IMAGE_TAG:-latest}
     env_file:
       - .env
     environment:
       POSTGRES_URL: postgresql+psycopg://dndhelper:dndhelper@db:5432/dndhelper
       EMBEDDINGS_DEVICE: cpu
-      # Instalación inicial por UI si no defines ADMIN_* en .env (cámbiala en producción).
-      SETUP_MASTER_PASSWORD: ${SETUP_MASTER_PASSWORD:-local-dev-setup-master}
+      # Si no se define SETUP_MASTER_PASSWORD, el entrypoint del backend la genera aleatoria y la muestra en logs.
+      SETUP_MASTER_PASSWORD: ${SETUP_MASTER_PASSWORD:-}
       # El servicio «ingest-worker» ya indexa la cola; evitar un segundo worker dentro del contenedor del API.
       INGEST_WORKER_AUTOSTART: "false"
     volumes:
-      - ./backend/data:/app/backend/data
-      - ./backend/storage:/app/backend/storage
+      - app_data:/app/backend/data
+      - app_storage:/app/backend/storage
     ports:
       - "8000:8000"
     healthcheck:
@@ -50,19 +48,17 @@ services:
         condition: service_healthy
 
   ingest-worker:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    image: yanferstime/dndhelper-backend:${DNDHELPER_IMAGE_TAG:-latest}
     env_file:
       - .env
     environment:
       POSTGRES_URL: postgresql+psycopg://dndhelper:dndhelper@db:5432/dndhelper
       EMBEDDINGS_DEVICE: cpu
       INGEST_WORKER_AUTOSTART: "false"
-      SETUP_MASTER_PASSWORD: ${SETUP_MASTER_PASSWORD:-local-dev-setup-master}
+      SETUP_MASTER_PASSWORD: ${SETUP_MASTER_PASSWORD:-}
     volumes:
-      - ./backend/data:/app/backend/data
-      - ./backend/storage:/app/backend/storage
+      - app_data:/app/backend/data
+      - app_storage:/app/backend/storage
     entrypoint: ["/usr/local/bin/docker-entrypoint-worker.sh"]
     depends_on:
       db:
@@ -71,9 +67,7 @@ services:
         condition: service_healthy
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: yanferstime/dndhelper-frontend:${DNDHELPER_IMAGE_TAG:-latest}
     environment:
       BACKEND_UPSTREAM: backend:8000
     ports:
@@ -89,6 +83,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        INSTALL_DEV: "true"
     env_file:
       - .env
     environment:
@@ -99,12 +95,8 @@ services:
       # Alineado con backend/tests/conftest.py (bootstrap /api/setup en tests)
       SETUP_MASTER_PASSWORD: pytest_integration_setup_master
     volumes:
-      - ./backend/data:/app/backend/data
-      - ./backend/storage:/app/backend/storage
-      # Código y migraciones del host (tests sin rebuild tras cambios)
-      - ./backend:/app/backend
-      - ./alembic:/app/alembic
-      - ./alembic.ini:/app/alembic.ini
+      - app_data:/app/backend/data
+      - app_storage:/app/backend/storage
     depends_on:
       db:
         condition: service_healthy
@@ -116,20 +108,23 @@ services:
   # Ej.: docker compose --profile e2e up -d db backend frontend && docker compose --profile e2e run --rm e2e
   e2e:
     profiles: ["e2e"]
-    image: mcr.microsoft.com/playwright:v1.58.2-noble
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.e2e
+    image: yanferstime/dndhelper-e2e:${DNDHELPER_IMAGE_TAG:-latest}
     env_file:
       - .env
     environment:
       PLAYWRIGHT_BASE_URL: http://frontend:80
       PLAYWRIGHT_DOCKER: "1"
       CI: "1"
-      # Misma lógica que e2e/helpers (bootstrap /api/setup) alineada con SETUP_MASTER_PASSWORD del backend
-      E2E_SETUP_MASTER_PASSWORD: ${SETUP_MASTER_PASSWORD:-local-dev-setup-master}
+      E2E_BACKEND_STORAGE_DIR: /backend/storage
+      # Si quieres bootstrap automático en E2E, exporta SETUP_MASTER_PASSWORD (o E2E_SETUP_MASTER_PASSWORD).
+      E2E_SETUP_MASTER_PASSWORD: ${SETUP_MASTER_PASSWORD:-}
     working_dir: /work
     volumes:
-      - ./frontend:/work
       # Misma ruta que resuelve e2e/helpers writeWorldImageFile → /backend/storage/... (debe coincidir con backend:/app/backend/storage)
-      - ./backend/storage:/backend/storage
+      - app_storage:/backend/storage
     depends_on:
       backend:
         condition: service_healthy
@@ -139,3 +134,5 @@ services:
 
 volumes:
   postgres_data:
+  app_data:
+  app_storage:

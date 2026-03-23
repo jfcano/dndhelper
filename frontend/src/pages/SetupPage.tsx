@@ -94,8 +94,8 @@ export function SetupPage() {
     <div className="page" style={{ maxWidth: '22rem', margin: '2rem auto' }}>
       <h2 style={{ marginTop: 0 }}>Instalación inicial</h2>
       <p className="muted" style={{ marginTop: 0 }}>
-        Crea la cuenta de administrador. Necesitas la contraseña maestra definida en el servidor (Secret de
-        Kubernetes).
+        Crea la cuenta de administrador. Necesitas la contraseña maestra definida en el servidor; puedes consultarla en
+        los logs de arranque del backend.
       </p>
       <form className="card-panel rag-query-form" onSubmit={(e) => void onSubmit(e)} style={{ marginTop: '1rem' }}>
         <label htmlFor="setup-master" className="muted" style={{ fontSize: '0.9rem' }}>
