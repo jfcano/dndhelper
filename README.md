@@ -9,6 +9,16 @@ La idea del proyecto es que puedas preparar y evolucionar una campaña completa 
 
 ---
 
+## Datos sobre la entrega:
+
+Enlace a la presentación de slides: https://docs.google.com/presentation/d/1Wrj_74uTbKG1_ubZddlpIlovYMLEoHJFBrxM4vEWGUc/edit?usp=sharing
+
+Enlace al entorno desplegado: https://yanfer.tech/
+
+Nota: Al trabajar en dos equipos distintos GitHub no ha reconocido correctamente los commits desde un equipo y se los ha asignado a otro usuario, pero, a día de este commit (24/03/2026), son todos míos.
+
+---
+
 ## a. Descripción general del proyecto
 
 DnD Helper está construido como una solución full-stack con backend en FastAPI, frontend en React y PostgreSQL como base de datos principal (incluyendo vectores con pgvector).
@@ -460,42 +470,87 @@ dndhelper/
 
 ### 1) Autenticación y control de acceso
 
-- Registro e inicio de sesión por JWT.
-- Resolución de contexto de usuario en la API.
-- Rol administrador con capacidad de operación transversal.
-- Flujo de instalación inicial (`/setup`) cuando no hay admin precreado.
+- **Registro e inicio de sesión con JWT**: el sistema emite token de acceso y lo usa en las rutas protegidas de la API.
+- **Contexto de usuario por petición**: cada operación se ejecuta bajo un `owner_id`, evitando cruces de datos entre cuentas.
+- **Rol administrador**: puede consultar/gestionar recursos de otros usuarios cuando la ruta lo permite (por ejemplo en operaciones RAG con `target_owner_id`/`for_owner_id`).
+- **Instalación inicial segura**: si no existe admin en BD, el flujo `/setup` permite bootstrap controlado con `SETUP_MASTER_PASSWORD`.
+- **Gestión de claves por usuario**: cada cuenta guarda su clave OpenAI en Ajustes, sin exponer secretos en respuestas.
+
+Qué aporta en la práctica: aislamiento multiusuario real, trazabilidad de acciones y una primera configuración operativa sin intervención manual en base de datos.
 
 ### 2) Gestión de campañas
 
-- CRUD de campañas.
-- Generación y aprobación de brief, historia y outline.
-- Vínculo opcional de campaña con mundo.
-- Reapertura de estado de trabajo cuando se quiere iterar.
+- **CRUD completo de campañas**: alta, consulta, edición parcial y borrado.
+- **Pipeline de contenido asistido**:
+  - generación de **brief** (base narrativa inicial),
+  - generación y consolidación de **historia** (`draft` y `final`),
+  - generación y aprobación de **outline**.
+- **Estados de trabajo iterables**: una campaña puede reabrirse para seguir refinando contenido ya generado.
+- **Vinculación con mundo**: una campaña puede relacionarse con un `world_id` para mantener coherencia de ambientación y activos.
+- **Modo asistido/wizard**: acelera creación inicial con generación automática de bloques clave.
+
+Qué aporta en la práctica: una campaña no es solo un registro, sino un flujo editorial con borradores, aprobaciones y revisión continua.
 
 ### 3) Gestión de mundos
 
-- Generación/edición de mundos con campos en borrador y final.
-- Definición de temas y tono.
-- Generación bajo demanda de activos visuales (según configuración).
+- **Generación y edición estructurada**: mundos con contenido textual editable en fases (borrador/final).
+- **Contexto creativo explícito**: soporte para tono, temas y pitch, que luego se reutilizan en sesiones y material asociado.
+- **Activos visuales bajo demanda**:
+  - mapa global,
+  - mapas locales/regionales,
+  - emblemas de facciones,
+  - retratos de personajes.
+- **Persistencia de archivos**: las imágenes se guardan en almacenamiento del backend y se sirven por API para uso en frontend.
+- **Condición operativa simple**: si hay clave OpenAI activa del usuario, la generación de imágenes está disponible.
+
+Qué aporta en la práctica: centraliza el worldbuilding (texto + visuales) en un único módulo reutilizable por el resto de la aplicación.
 
 ### 4) Gestión de sesiones
 
-- Generación de múltiples sesiones por campaña.
-- Listados por campaña y listados globales paginados.
-- Ciclo de edición/aprobación/reapertura.
+- **Generación masiva por campaña**: creación automática de varias sesiones en una sola operación (`session_count`).
+- **Consulta flexible**:
+  - listado por campaña concreta,
+  - listado global del propietario con paginación (`limit/offset`).
+- **Ciclo de vida de sesión**:
+  - edición de borrador,
+  - aprobación de versión final,
+  - reapertura para re-trabajar contenido,
+  - eliminación cuando deja de ser útil.
+- **Coherencia narrativa**: las sesiones se apoyan en información ya consolidada de campaña y mundo.
+
+Qué aporta en la práctica: permite planificar largo plazo y, a la vez, adaptar cada sesión al feedback real de la mesa.
 
 ### 5) Consultas RAG y documentos
 
-- Endpoint de consulta principal: `POST /api/query_rules`.
-- Tres alcances de consulta (`rules`, `campaigns_general`, `campaign`).
-- Subida de documentos a cola de ingesta (`/api/upload_pdf`) con soporte PDF/TXT/DOCX.
-- Limpieza de índices/recursos por objetivo (`/api/rag/clear`).
+- **Consulta semántica principal**: `POST /api/query_rules`, con respuesta y fuentes recuperadas.
+- **Tres alcances de búsqueda**:
+  - `rules`: manuales/reglamento del usuario,
+  - `campaigns_general`: repositorio general de referencias de campaña,
+  - `campaign`: contexto acotado a una campaña concreta.
+- **Subida de documentos con cola asíncrona**: `POST /api/upload_pdf` admite `PDF`, `TXT`, `DOCX`, valida formato/tamaño y encola trabajos.
+- **Seguimiento de ingesta**: `GET /api/ingest_jobs` permite ver estado, progreso y resultado (`indexed`, `unchanged`, `empty`, `failed`).
+- **Worker desacoplado**: `ingest-worker` procesa la cola y recupera trabajos pendientes tras reinicios.
+- **Limpieza controlada**: `POST /api/rag/clear` borra colecciones y artefactos por objetivo (`manuals`, `campaign`).
+
+Qué aporta en la práctica: consultas útiles en lenguaje natural sobre documentación propia, sin depender de memoria manual ni búsquedas lineales.
 
 ### 6) Operación y observabilidad básica
 
-- Endpoints de salud (`/health`, `/health/ready`).
-- Documentación OpenAPI en `/docs`.
-- Worker de ingesta desacoplable para escalar o separar carga.
+- **Salud de servicio**:
+  - `/health` para liveness,
+  - `/health/ready` para readiness con comprobación de base de datos.
+- **Contrato API autocontenido**: `/docs` (OpenAPI/Swagger) para explorar endpoints y probar integraciones.
+- **Topología adaptable**:
+  - modo local (backend + frontend dev + worker opcional),
+  - Docker Compose con worker dedicado,
+  - Kubernetes con despliegues separados.
+- **Migraciones versionadas**: Alembic como mecanismo estándar para evolución de esquema.
+- **Testing integrado en repositorio**:
+  - scripts backend (`test.sh`, `test.ps1`),
+  - suite completa con E2E (`test-all.sh`, `test-all.ps1`),
+  - perfiles de Compose para pruebas reproducibles.
+
+Qué aporta en la práctica: despliegues más previsibles, diagnóstico rápido ante fallos y menor fricción para desarrollo colaborativo.
 
 ---
 

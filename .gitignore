@@ -24,3 +24,5 @@ scripts/dockerhub-build-push.sh
 .vscode/
 .idea/
 
+# Materiales locales de presentacion
+presentacion/
